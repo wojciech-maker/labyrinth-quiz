@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Labirynt Quiz</title>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&display=swap" rel="stylesheet"/>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f0f23;color:#e0e0e0;font-family:'Fira Code',monospace;overflow-x:hidden;min-height:100vh}
+#root{min-height:100vh}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes glow{0%,100%{box-shadow:0 0 5px currentColor}50%{box-shadow:0 0 20px currentColor, 0 0 40px currentColor}}
+@keyframes crownFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+.fade-in{animation:fadeIn .3s ease}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback,useRef,useMemo} = React;
+
+/* ===================== QUESTIONS POOL ===================== */
+const QUESTIONS_MEDIUM = [
+  {q:"Który album Toola ukazał się w 2019 roku po 13 latach przerwy?",a:["Fear Inoculum","10,000 Days","Lateralus","Ænima"],c:0},
+  {q:"Kto jest wokalistą Black Sabbath w oryginalnym składzie?",a:["Ozzy Osbourne","Ronnie James Dio","Tony Martin","Ian Gillan"],c:0},
+  {q:"Z którego albumu Metalliki pochodzi 'Enter Sandman'?",a:["Metallica (Black Album)","Master of Puppets","Ride the Lightning","...And Justice for All"],c:0},
+  {q:"Jak nazywa się wokalista System of a Down?",a:["Serj Tankian","Daron Malakian","Shavo Odadjian","John Dolmayan"],c:0},
+  {q:"Który utwór RATM zawiera słowa 'Killing in the name of'?",a:["Killing in the Name","Bulls on Parade","Bombtrack","Guerrilla Radio"],c:0},
+  {q:"Ile cylindrów ma silnik V8?",a:["8","6","10","12"],c:0},
+  {q:"Co oznacza skrót TDI w motoryzacji?",a:["Turbocharged Direct Injection","Turbo Diesel Ignition","Total Drive Integration","Twin Diesel Inline"],c:0},
+  {q:"Który język ma najwięcej native speakerów na świecie?",a:["Mandaryński","Angielski","Hiszpański","Hindi"],c:0},
+  {q:"Czym jest dysonans poznawczy?",a:["Napięcie z powodu sprzecznych przekonań","Zaburzenie pamięci","Rodzaj halucynacji","Brak empatii"],c:0},
+  {q:"Co to jest pentatonika?",a:["Skala 5-dźwiękowa","Akord 5-dźwiękowy","Metrum 5/4","Grupa 5 instrumentów"],c:0},
+  {q:"Stolica Mongolii to:",a:["Ułan Bator","Astana","Biszkek","Ułan Ude"],c:0},
+  {q:"Który album Toola ma najdłuższy czas trwania?",a:["Fear Inoculum","Lateralus","10,000 Days","Undertow"],c:0},
+  {q:"Kto gra na gitarze w Black Sabbath?",a:["Tony Iommi","Geezer Butler","Bill Ward","Ozzy Osbourne"],c:0},
+  {q:"Z którego roku pochodzi 'Master of Puppets' Metalliki?",a:["1986","1984","1988","1991"],c:0},
+  {q:"Album 'Toxicity' SOAD ukazał się w roku:",a:["2001","1998","2003","2005"],c:0},
+  {q:"Gitarzysta Rage Against the Machine to:",a:["Tom Morello","Zack de la Rocha","Tim Commerford","Brad Wilk"],c:0},
+  {q:"Co oznacza pojemność silnika 2.0?",a:["2000 cm³","2000 KM","2000 obrotów","2000 kPa"],c:0},
+  {q:"Turbosprężarka wykorzystuje energię:",a:["Spalin","Elektryczności","Paliwa","Sprężonego powietrza"],c:0},
+  {q:"Ile przypadków ma język fiński?",a:["15","6","8","22"],c:0},
+  {q:"Efekt Dunninga-Krugera to:",a:["Przecenianie swoich kompetencji przez laików","Strach przed tłumem","Zaburzenie pamięci","Efekt placebo"],c:0},
+  {q:"Akord durowy składa się z interwałów:",a:["Tercja wielka + mała","Tercja mała + wielka","Dwie tercje wielkie","Dwie tercje małe"],c:0},
+  {q:"Najgłębsze jezioro na świecie to:",a:["Bajkał","Tanganika","Kaspijskie","Titicaca"],c:0},
+  {q:"Maynard James Keenan jest też wokalistą:",a:["A Perfect Circle","Deftones","Primus","Porcupine Tree"],c:0},
+  {q:"Pierwszy album Black Sabbath ukazał się w roku:",a:["1970","1968","1972","1975"],c:0},
+  {q:"Lars Ulrich w Metallice gra na:",a:["Perkusji","Gitarze basowej","Gitarze","Klawiszach"],c:0},
+  {q:"SOAD pochodzi z:",a:["Los Angeles","Erywań","Nowy Jork","Bejrut"],c:0},
+  {q:"Album 'Evil Empire' to dzieło:",a:["RATM","SOAD","Metallica","Slayer"],c:0},
+  {q:"Układ hamulcowy ABS zapobiega:",a:["Blokowaniu kół","Przegrzaniu silnika","Poślizgowi bocznemu","Zużyciu opon"],c:0},
+  {q:"Język z rodziny sino-tybetańskiej to:",a:["Mandaryński","Japoński","Koreański","Wietnamski"],c:0},
+  {q:"Piramida potrzeb Maslowa — na szczycie jest:",a:["Samorealizacja","Bezpieczeństwo","Przynależność","Szacunek"],c:0},
+  {q:"Metrum 4/4 oznacza:",a:["4 ćwierćnuty w takcie","4 takty w utworze","Tempo 4 BPM","4 oktawy"],c:0},
+  {q:"Największy kraj Afryki pod względem powierzchni:",a:["Algieria","Sudan","Kongo","Nigeria"],c:0},
+  {q:"Danny Carey (Tool) jest znany z użycia metrum:",a:["Nieregularnych/złożonych","Wyłącznie 4/4","Wyłącznie 3/4","Brak metrum"],c:0},
+  {q:"'Paranoid' Black Sabbath trwa około:",a:["2:50","5:30","7:00","4:20"],c:0},
+  {q:"Kirk Hammett w Metallice jest znany z użycia efektu:",a:["Wah-wah","Flanger","Chorus","Phaser"],c:0},
+  {q:"Perkusista SOAD to:",a:["John Dolmayan","Shavo Odadjian","Daron Malakian","Serj Tankian"],c:0},
+  {q:"Zack de la Rocha w RATM jest:",a:["Wokalistą","Gitarzystą","Basistą","Perkusistą"],c:0},
+  {q:"Co to jest moment obrotowy?",a:["Siła obracająca wał","Prędkość obrotowa","Moc silnika","Ciśnienie w cylindrze"],c:0},
+  {q:"Esperanto zostało stworzone przez:",a:["Ludwika Zamenhofa","Noama Chomsky'ego","Tolkiena","Ferdynanda de Saussure'a"],c:0},
+  {q:"Terapia CBT to:",a:["Poznawczo-behawioralna","Psychoanalityczna","Humanistyczna","Systemowa"],c:0},
+];
+
+const QUESTIONS_HARD = [
+  {q:"Jaki metrum dominuje w utworze 'Schism' Toola?",a:["5/8 i 7/8 naprzemiennie","4/4","6/8","3/4"],c:0},
+  {q:"Który album Black Sabbath nagrany z Dio ukazał się pierwszy?",a:["Heaven and Hell","Mob Rules","Dehumanizer","The Devil You Know"],c:0},
+  {q:"W jakim stroju gra James Hetfield na 'St. Anger'?",a:["Drop C","Standard E","Drop D","Open G"],c:0},
+  {q:"Ile albumów studyjnych wydał SOAD?",a:["5","4","6","3"],c:0},
+  {q:"Tom Morello ukończył studia na:",a:["Harvard","MIT","Yale","Stanford"],c:0},
+  {q:"Jaka jest różnica między DOHC a SOHC?",a:["Liczba wałków rozrządu","Liczba cylindrów","Typ paliwa","Moc turbo"],c:0},
+  {q:"Prawo Grimma dotyczy:",a:["Przesuwki spółgłoskowej","Gramatyki","Składni","Fonetyki samogłosek"],c:0},
+  {q:"Eksperyment Milgrama badał:",a:["Posłuszeństwo wobec autorytetu","Pamięć krótkotrwałą","Konformizm grupowy","Dysonans poznawczy"],c:0},
+  {q:"Trytonus to interwał o:",a:["3 całe tony","2 całe tony","4 całe tony","2.5 tonu"],c:0},
+  {q:"Która rzeka przepływa przez najwięcej stolic europejskich?",a:["Dunaj","Ren","Łaba","Wisła"],c:0},
+  {q:"Utwór 'Lateralus' Toola bazuje na ciągu:",a:["Fibonacciego","Geometrycznym","Arytmetycznym","Harmonicznym"],c:0},
+  {q:"Tony Iommi stracił końcówki palców pracując w:",a:["Fabryce blachy","Warsztacie samochodowym","Tartaku","Kopalni"],c:0},
+  {q:"Album '...And Justice for All' Metalliki jest znany z braku:",a:["Basu w miksie","Gitary","Perkusji","Wokalu"],c:0},
+  {q:"Daron Malakian (SOAD) jest też liderem zespołu:",a:["Scars on Broadway","Serart","Buckethead","Primus"],c:0},
+  {q:"RATM rozwiązał się po raz pierwszy w roku:",a:["2000","1999","2001","1998"],c:0},
+  {q:"Wtrysk Common Rail działa pod ciśnieniem do:",a:["2000+ bar","500 bar","100 bar","50 bar"],c:0},
+  {q:"Hipoteza Sapira-Whorfa mówi że:",a:["Język wpływa na myślenie","Myślenie wpływa na język","Język jest wrodzony","Wszystkie języki są równe"],c:0},
+  {q:"Efekt widza (bystander effect) odkryli:",a:["Darley i Latané","Milgram i Zimbardo","Freud i Jung","Asch i Sherif"],c:0},
+  {q:"Skala lidyjska różni się od durowej:",a:["Podwyższonym 4. stopniem","Obniżonym 7. stopniem","Obniżonym 3. stopniem","Podwyższonym 2. stopniem"],c:0},
+  {q:"Jedyny kraj na świecie leżący w 4 półkulach to:",a:["Kiribati","Ekwador","Indonezja","Brazylia"],c:0},
+];
+
+/* ===================== CONSTANTS ===================== */
+const PLAYERS = [
+  {id:0,name:"Bartek",color:"#ff4757",emoji:"🔴"},
+  {id:1,name:"Wojtek",color:"#1e90ff",emoji:"🔵"},
+  {id:2,name:"Sławek",color:"#2ed573",emoji:"🟢"},
+];
+const MAZE_SIZES = [7,8,9];
+const POINTS = [3,2,1];
+
+const AI_COMMENTS = {
+  correct:["Ha! Łatwizna! 😎","Kto następny? 💪","Mózg mi działa jak V8! 🏎️","Za łatwe na mnie!","Jestem maszyną! 🤖"],
+  wrong:["Jasna cholera! 😤","Dżżżt z Żelazka! 🔥","Diabli by to nadali!","Kto wymyślił to pytanie?!","Oszustwo! OSZUSTWO!!","Niech to szlag! ⚡","Mój kot by lepiej odpowiedział..."],
+  frozen:["AAAA! Zamrożony?! 🥶","To nieczysta zagrywka!","Kiedyś się za to zemszczę!"],
+  powerUsed:["Hehehehe... 😈","Smacznego! 💥","A to za ostatni raz!"],
+};
+
+/* ===================== MAZE GENERATION ===================== */
+function generateMaze(size) {
+  const cells = [];
+  for (let r = 0; r < size; r++) {
+    cells[r] = [];
+    for (let c = 0; c < size; c++) {
+      cells[r][c] = {r, c, walls:{top:true,right:true,bottom:true,left:true}, visited:false};
+    }
+  }
+  const center = Math.floor(size / 2);
+  const stack = [];
+  const startCell = cells[center][center];
+  startCell.visited = true;
+  stack.push(startCell);
+
+  function neighbors(cell) {
+    const {r,c} = cell;
+    const n = [];
+    if (r > 0 && !cells[r-1][c].visited) n.push(cells[r-1][c]);
+    if (r < size-1 && !cells[r+1][c].visited) n.push(cells[r+1][c]);
+    if (c > 0 && !cells[r][c-1].visited) n.push(cells[r][c-1]);
+    if (c < size-1 && !cells[r][c+1].visited) n.push(cells[r][c+1]);
+    return n;
+  }
+
+  function removeWall(a, b) {
+    if (a.r === b.r) {
+      if (a.c < b.c) { a.walls.right = false; b.walls.left = false; }
+      else { a.walls.left = false; b.walls.right = false; }
+    } else {
+      if (a.r < b.r) { a.walls.bottom = false; b.walls.top = false; }
+      else { a.walls.top = false; b.walls.bottom = false; }
+    }
+  }
+
+  while (stack.length > 0) {
+    const current = stack[stack.length - 1];
+    const nb = neighbors(current);
+    if (nb.length > 0) {
+      const next = nb[Math.floor(Math.random() * nb.length)];
+      removeWall(current, next);
+      next.visited = true;
+      stack.push(next);
+    } else {
+      stack.pop();
+    }
+  }
+
+  // Ensure center has at least 3 open directions
+  const cc = cells[center][center];
+  const dirs = [
+    {dr:-1,dc:0,wall:'top',opp:'bottom'},
+    {dr:1,dc:0,wall:'bottom',opp:'top'},
+    {dr:0,dc:-1,wall:'left',opp:'right'},
+    {dr:0,dc:1,wall:'right',opp:'left'},
+  ];
+  let openCount = dirs.filter(d => !cc.walls[d.wall]).length;
+  const closedDirs = dirs.filter(d => cc.walls[d.wall] && center+d.dr >= 0 && center+d.dr < size && center+d.dc >= 0 && center+d.dc < size);
+  while (openCount < 3 && closedDirs.length > 0) {
+    const d = closedDirs.splice(Math.floor(Math.random()*closedDirs.length),1)[0];
+    cc.walls[d.wall] = false;
+    cells[center+d.dr][center+d.dc].walls[d.opp] = false;
+    openCount++;
+  }
+
+  // Pick random corner as goal
+  const corners = [[0,0],[0,size-1],[size-1,0],[size-1,size-1]];
+  const goal = corners[Math.floor(Math.random()*corners.length)];
+
+  // Reset visited for game use
+  for (let r = 0; r < size; r++)
+    for (let c = 0; c < size; c++)
+      cells[r][c].visited = false;
+
+  return {cells, size, start:[center,center], goal};
+}
+
+/* ===================== BFS PATH FINDING ===================== */
+function bfsPath(maze, from, to) {
+  const {cells, size} = maze;
+  const visited = Array.from({length:size},()=>Array(size).fill(false));
+  const parent = Array.from({length:size},()=>Array(size).fill(null));
+  const queue = [from];
+  visited[from[0]][from[1]] = true;
+
+  const dirMap = {top:[-1,0],bottom:[1,0],left:[0,-1],right:[0,1]};
+
+  while (queue.length > 0) {
+    const [r,c] = queue.shift();
+    if (r === to[0] && c === to[1]) {
+      const path = [];
+      let cur = to;
+      while (cur) { path.unshift(cur); cur = parent[cur[0]][cur[1]]; }
+      return path;
+    }
+    const cell = cells[r][c];
+    for (const [wall, [dr,dc]] of Object.entries(dirMap)) {
+      const nr = r+dr, nc = c+dc;
+      if (nr>=0&&nr<size&&nc>=0&&nc<size&&!cell.walls[wall]&&!visited[nr][nc]) {
+        visited[nr][nc] = true;
+        parent[nr][nc] = [r,c];
+        queue.push([nr,nc]);
+      }
+    }
+  }
+  return [];
+}
+
+function getAccessibleNeighbors(maze, r, c) {
+  const {cells, size} = maze;
+  const cell = cells[r][c];
+  const dirMap = {top:[-1,0],bottom:[1,0],left:[0,-1],right:[0,1]};
+  const result = [];
+  for (const [wall,[dr,dc]] of Object.entries(dirMap)) {
+    if (!cell.walls[wall]) {
+      const nr = r+dr, nc = c+dc;
+      if (nr>=0&&nr<size&&nc>=0&&nc<size) result.push([nr,nc]);
+    }
+  }
+  return result;
+}
+
+/* ===================== MAIN APP ===================== */
+function App() {
+  const [screen, setScreen] = useState('menu'); // menu, modeSelect, game, gameOver
+  const [gameMode, setGameMode] = useState(null); // 'multi' or 'solo'
+  const [soloPlayer, setSoloPlayer] = useState(null);
+  const [level, setLevel] = useState(0);
+  const [mazes, setMazes] = useState([null,null,null]);
+  const [positions, setPositions] = useState([[0,0],[0,0],[0,0]]);
+  const [visitedCells, setVisitedCells] = useState([new Set(),new Set(),new Set()]);
+  const [scores, setScores] = useState([0,0,0]);
+  const [activePlayer, setActivePlayer] = useState(0);
+  const [finishOrder, setFinishOrder] = useState([]);
+  const [streaks, setStreaks] = useState([0,0,0]);
+  const [frozen, setFrozen] = useState([false,false,false]);
+  const [lastFrozenBy, setLastFrozenBy] = useState([null,null,null]);
+  const [challenged, setChallenged] = useState([false,false,false]);
+  const [crowns, setCrowns] = useState([0,0,0]);
+  const [questionPhase, setQuestionPhase] = useState(null);
+  const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [questionTimer, setQuestionTimer] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState(null);
+  const [answerResult, setAnswerResult] = useState(null);
+  const [powerPhase, setPowerPhase] = useState(false);
+  const [hints, setHints] = useState([new Set(),new Set(),new Set()]);
+  const [questionPool, setQuestionPool] = useState({medium:[...QUESTIONS_MEDIUM],hard:[...QUESTIONS_HARD]});
+  const [aiComment, setAiComment] = useState({0:null,1:null,2:null});
+  const [turnMessage, setTurnMessage] = useState(null);
+  const [isAiTurn, setIsAiTurn] = useState(false);
+  const [pendingMove, setPendingMove] = useState(null);
+  const [levelScores, setLevelScores] = useState([]);
+
+  const timerRef = useRef(null);
+  const aiTimeoutRef = useRef(null);
+
+  const isAI = useCallback((pid) => gameMode === 'solo' && pid !== soloPlayer, [gameMode, soloPlayer]);
+
+  /* ---- Question Pool ---- */
+  function drawQuestion(type) {
+    const pool = questionPool[type];
+    if (pool.length === 0) {
+      const fresh = type === 'medium' ? [...QUESTIONS_MEDIUM] : [...QUESTIONS_HARD];
+      for (let i = fresh.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random()*(i+1));
+        [fresh[i],fresh[j]] = [fresh[j],fresh[i]];
+      }
+      questionPool[type] = fresh;
+    }
+    return questionPool[type].splice(Math.floor(Math.random()*questionPool[type].length),1)[0];
+  }
+
+  /* ---- Init Level ---- */
+  function initLevel(lvl) {
+    const size = MAZE_SIZES[lvl];
+    const m = [generateMaze(size), generateMaze(size), generateMaze(size)];
+    setMazes(m);
+    const startPositions = m.map(mz => [...mz.start]);
+    setPositions(startPositions);
+    const vis = m.map(mz => {
+      const s = new Set();
+      s.add(`${mz.start[0]},${mz.start[1]}`);
+      return s;
+    });
+    setVisitedCells(vis);
+    setFinishOrder([]);
+    setActivePlayer(0);
+    setStreaks([0,0,0]);
+    setFrozen([false,false,false]);
+    setLastFrozenBy([null,null,null]);
+    setChallenged([false,false,false]);
+    setHints([new Set(),new Set(),new Set()]);
+    setQuestionPhase(null);
+    setCurrentQuestion(null);
+    setSelectedAnswer(null);
+    setAnswerResult(null);
+    setPowerPhase(false);
+    setTurnMessage(null);
+    setIsAiTurn(false);
+    setPendingMove(null);
+    setAiComment({0:null,1:null,2:null});
+  }
+
+  function startGame(mode, solo) {
+    setGameMode(mode);
+    setSoloPlayer(solo);
+    setLevel(0);
+    setScores([0,0,0]);
+    setCrowns([0,0,0]);
+    setLevelScores([]);
+    setQuestionPool({medium:[...QUESTIONS_MEDIUM],hard:[...QUESTIONS_HARD]});
+    setScreen('game');
+    setTimeout(() => initLevel(0), 50);
+  }
+
+  useEffect(() => {
+    if (screen === 'game' && level >= 0 && mazes[0] === null) initLevel(0);
+  }, [screen]);
+
+  /* ---- Timer Logic ---- */
+  useEffect(() => {
+    if (questionPhase === 'reading' || questionPhase === 'answering') {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        setQuestionTimer(prev => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current);
+            if (questionPhase === 'reading') {
+              setQuestionPhase('answering');
+              setQuestionTimer(10);
+            } else {
+              handleAnswer(null);
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [questionPhase]);
+
+  /* ---- Next Player ---- */
+  function nextPlayer() {
+    setQuestionPhase(null);
+    setCurrentQuestion(null);
+    setSelectedAnswer(null);
+    setAnswerResult(null);
+    setPowerPhase(false);
+    setPendingMove(null);
+
+    const playersInGame = [0,1,2].filter(p => !finishOrder.includes(p));
+    if (playersInGame.length === 0 || finishOrder.length >= 3) {
+      endLevel();
+      return;
+    }
+
+    let next = activePlayer;
+    do {
+      next = (next + 1) % 3;
+    } while (finishOrder.includes(next) && playersInGame.length > 0);
+
+    if (frozen[next]) {
+      const newFrozen = [...frozen];
+      newFrozen[next] = false;
+      setFrozen(newFrozen);
+      setTurnMessage(`${PLAYERS[next].name} jest zamrożony! ❄️ Traci turę.`);
+      setActivePlayer(next);
+      setTimeout(() => {
+        setTurnMessage(null);
+        // skip to next
+        let nn = next;
+        do { nn = (nn+1)%3; } while (finishOrder.includes(nn));
+        setActivePlayer(nn);
+      }, 1500);
+      return;
+    }
+    setActivePlayer(next);
+  }
+
+  /* ---- End Level ---- */
+  function endLevel() {
+    const ls = [...levelScores];
+    const levelPts = [0,0,0];
+    finishOrder.forEach((pid,idx) => {
+      if (idx < 3) levelPts[pid] = POINTS[idx];
+    });
+    // players who didn't finish get 0
+    ls.push(levelPts);
+    setLevelScores(ls);
+
+    const newScores = [...scores];
+    levelPts.forEach((pts,i) => newScores[i] += pts);
+    // add crown bonuses
+    crowns.forEach((c,i) => newScores[i] += 0); // crowns already added live
+    setScores(newScores);
+
+    if (level >= 2) {
+      setScreen('gameOver');
+    } else {
+      const nextLvl = level + 1;
+      setLevel(nextLvl);
+      setTurnMessage(`Poziom ${level+1} ukończony! Następny: ${MAZE_SIZES[nextLvl]}x${MAZE_SIZES[nextLvl]}`);
+      setTimeout(() => {
+        setTurnMessage(null);
+        initLevel(nextLvl);
+      }, 2500);
+    }
+  }
+
+  /* ---- Handle Cell Click ---- */
+  function handleCellClick(r, c) {
+    if (questionPhase || powerPhase || isAiTurn) return;
+    if (finishOrder.includes(activePlayer)) return;
+
+    const pid = activePlayer;
+    const maze = mazes[pid];
+    const [pr, pc] = positions[pid];
+    const key = `${r},${c}`;
+
+    // Check if target is accessible neighbor
+    const directNeighbors = getAccessibleNeighbors(maze, pr, pc);
+    const isDirect = directNeighbors.some(([nr,nc]) => nr===r && nc===c);
+
+    if (!isDirect) {
+      // Check if can path through visited cells
+      if (!visitedCells[pid].has(key)) return;
+      const pathThroughVisited = canReachThroughVisited(maze, pid, [pr,pc], [r,c]);
+      if (!pathThroughVisited) return;
+      // Move through visited (free)
+      movePlayer(pid, r, c, false);
+      return;
+    }
+
+    if (visitedCells[pid].has(key)) {
+      // Free move on visited cell
+      movePlayer(pid, r, c, false);
+    } else {
+      // New cell - trigger question
+      setPendingMove([r,c]);
+      triggerQuestion(pid);
+    }
+  }
+
+  function canReachThroughVisited(maze, pid, from, to) {
+    const vis = visitedCells[pid];
+    const {cells, size} = maze;
+    const seen = new Set();
+    const queue = [from];
+    seen.add(`${from[0]},${from[1]}`);
+    const dirMap = {top:[-1,0],bottom:[1,0],left:[0,-1],right:[0,1]};
+
+    while (queue.length > 0) {
+      const [r,c] = queue.shift();
+      if (r===to[0]&&c===to[1]) return true;
+      const cell = cells[r][c];
+      for (const [wall,[dr,dc]] of Object.entries(dirMap)) {
+        const nr=r+dr, nc=c+dc;
+        const k = `${nr},${nc}`;
+        if (nr>=0&&nr<size&&nc>=0&&nc<size&&!cell.walls[wall]&&!seen.has(k)&&vis.has(k)) {
+          seen.add(k);
+          queue.push([nr,nc]);
+        }
+      }
+    }
+    return false;
+  }
+
+  function movePlayer(pid, r, c, isNew) {
+    const newPos = [...positions];
+    newPos[pid] = [r,c];
+    setPositions(newPos);
+
+    const newVis = [...visitedCells];
+    const s = new Set(newVis[pid]);
+    s.add(`${r},${c}`);
+    newVis[pid] = s;
+    setVisitedCells(newVis);
+
+    // Check if reached goal
+    const maze = mazes[pid];
+    if (r === maze.goal[0] && c === maze.goal[1]) {
+      const newOrder = [...finishOrder, pid];
+      setFinishOrder(newOrder);
+      const place = newOrder.length;
+      const pts = POINTS[place-1] || 0;
+      const newScores = [...scores];
+      newScores[pid] += pts;
+      setScores(newScores);
+      setTurnMessage(`${PLAYERS[pid].name} ukończył labirynt! ${place === 1 ? '🥇' : place === 2 ? '🥈' : '🥉'} +${pts} pkt`);
+      setTimeout(() => {
+        setTurnMessage(null);
+        if (newOrder.length >= 3) {
+          setFinishOrder(newOrder);
+          endLevel();
+        } else {
+          nextPlayer();
+        }
+      }, 2000);
+      return;
+    }
+  }
+
+  /* ---- Trigger Question ---- */
+  function triggerQuestion(pid) {
+    const isChallenge = challenged[pid];
+    const type = isChallenge ? 'hard' : 'medium';
+    const q = drawQuestion(type);
+    setCurrentQuestion({...q, type, isChallenge});
+    setQuestionPhase('reading');
+    setQuestionTimer(10);
+    setSelectedAnswer(null);
+    setAnswerResult(null);
+
+    if (isChallenge) {
+      const newCh = [...challenged];
+      newCh[pid] = false;
+      setChallenged(newCh);
+    }
+  }
+
+  /* ---- Handle Answer ---- */
+  function handleAnswer(ansIdx) {
+    if (timerRef.current) clearInterval(timerRef.current);
+    const pid = activePlayer;
+    const correct = ansIdx === currentQuestion.c;
+    setSelectedAnswer(ansIdx);
+    setAnswerResult(correct);
+    setQuestionPhase('result');
+
+    if (correct) {
+      const newStreaks = [...streaks];
+      if (!currentQuestion.isChallenge) {
+        newStreaks[pid] = newStreaks[pid] + 1;
+      } else {
+        newStreaks[pid] = 0;
+      }
+      setStreaks(newStreaks);
+
+      // Move to new cell
+      if (pendingMove) {
+        movePlayerAfterQuestion(pid, pendingMove[0], pendingMove[1]);
+      }
+
+      if (!currentQuestion.isChallenge) {
+        // Hints
+        const numHints = newStreaks[pid] >= 2 ? 2 : 1;
+        showHints(pid, numHints);
+
+        // After showing result, go to power selection
+        setTimeout(() => {
+          if (finishOrder.includes(pid)) return;
+          setPowerPhase(true);
+          setQuestionPhase(null);
+        }, 1500);
+      } else {
+        // Challenge: no bonus, just end turn after showing result
+        setTimeout(() => {
+          if (!finishOrder.includes(pid)) {
+            nextPlayer();
+          }
+        }, 1500);
+      }
+    } else {
+      // Wrong
+      const newStreaks = [...streaks];
+      newStreaks[pid] = 0;
+      setStreaks(newStreaks);
+      // Clear hints
+      const newHints = [...hints];
+      newHints[pid] = new Set();
+      setHints(newHints);
+
+      // Still move to the cell (every entered cell is conquered)
+      if (pendingMove) {
+        movePlayerAfterQuestion(pid, pendingMove[0], pendingMove[1]);
+      }
+
+      setTimeout(() => {
+        if (!finishOrder.includes(pid)) {
+          nextPlayer();
+        }
+      }, 1500);
+    }
+  }
+
+  function movePlayerAfterQuestion(pid, r, c) {
+    const newPos = [...positions];
+    newPos[pid] = [r,c];
+    setPositions(newPos);
+    const newVis = [...visitedCells];
+    const s = new Set(newVis[pid]);
+    s.add(`${r},${c}`);
+    newVis[pid] = s;
+    setVisitedCells(newVis);
+
+    const maze = mazes[pid];
+    if (r === maze.goal[0] && c === maze.goal[1]) {
+      const newOrder = [...finishOrder, pid];
+      setFinishOrder(newOrder);
+      const place = newOrder.length;
+      const pts = POINTS[place-1] || 0;
+      const newScores2 = [...scores];
+      newScores2[pid] += pts;
+      setScores(newScores2);
+      setTurnMessage(`${PLAYERS[pid].name} ukończył labirynt! ${place === 1 ? '🥇' : place === 2 ? '🥈' : '🥉'} +${pts} pkt`);
+    }
+  }
+
+  function showHints(pid, count) {
+    const maze = mazes[pid];
+    const pos = pendingMove || positions[pid];
+    const path = bfsPath(maze, pos, maze.goal);
+    const newHints = [...hints];
+    const s = new Set(newHints[pid]);
+    for (let i = 1; i <= count && i < path.length; i++) {
+      s.add(`${path[i][0]},${path[i][1]}`);
+    }
+    newHints[pid] = s;
+    setHints(newHints);
+  }
+
+  /* ---- Powers ---- */
+  function usePower(power, targetId) {
+    const pid = activePlayer;
+    if (power === 'freeze') {
+      if (lastFrozenBy[targetId] === pid) return; // can't freeze same player twice in a row
+      const newFrozen = [...frozen];
+      newFrozen[targetId] = true;
+      setFrozen(newFrozen);
+      const newLFB = [...lastFrozenBy];
+      newLFB[targetId] = pid;
+      setLastFrozenBy(newLFB);
+      setTurnMessage(`${PLAYERS[pid].name} zamraża ${PLAYERS[targetId].name}! 🧊`);
+    } else if (power === 'challenge') {
+      const newCh = [...challenged];
+      newCh[targetId] = true;
+      setChallenged(newCh);
+      setTurnMessage(`${PLAYERS[pid].name} wysyła wyzwanie ${PLAYERS[targetId].name}! ⚡`);
+    } else if (power === 'crown') {
+      const newCrowns = [...crowns];
+      newCrowns[pid]++;
+      setCrowns(newCrowns);
+      const newScores = [...scores];
+      newScores[pid] += 1;
+      setScores(newScores);
+      setTurnMessage(`${PLAYERS[pid].name} zdobywa koronę! 👑 +1 pkt`);
+    }
+    setPowerPhase(false);
+    setTimeout(() => {
+      setTurnMessage(null);
+      nextPlayer();
+    }, 1500);
+  }
+
+  /* ---- AI Logic ---- */
+  useEffect(() => {
+    if (screen !== 'game' || !mazes[0]) return;
+    const pid = activePlayer;
+    if (!isAI(pid)) { setIsAiTurn(false); return; }
+    if (finishOrder.includes(pid)) { nextPlayer(); return; }
+    if (frozen[pid]) {
+      // handled in nextPlayer already, but just in case
+      return;
+    }
+
+    setIsAiTurn(true);
+    const aiTimeout = setTimeout(() => runAiTurn(pid), 800);
+    aiTimeoutRef.current = aiTimeout;
+    return () => clearTimeout(aiTimeout);
+  }, [activePlayer, screen, mazes[0], finishOrder.length]);
+
+  function runAiTurn(pid) {
+    if (!mazes[pid]) return;
+    const maze = mazes[pid];
+    const [r,c] = positions[pid];
+    const path = bfsPath(maze, [r,c], maze.goal);
+    const neighbors = getAccessibleNeighbors(maze, r, c);
+
+    let target;
+    // AI prefers path to goal but sometimes wanders
+    if (path.length > 1 && Math.random() < 0.75) {
+      target = path[1];
+    } else {
+      // pick random neighbor, prefer unvisited
+      const unvisited = neighbors.filter(([nr,nc]) => !visitedCells[pid].has(`${nr},${nc}`));
+      if (unvisited.length > 0) {
+        target = unvisited[Math.floor(Math.random()*unvisited.length)];
+      } else {
+        target = neighbors[Math.floor(Math.random()*neighbors.length)];
+      }
+    }
+
+    const [tr,tc] = target;
+    const key = `${tr},${tc}`;
+    const isVisited = visitedCells[pid].has(key);
+
+    // Move AI
+    const newPos = [...positions];
+    newPos[pid] = [tr,tc];
+    setPositions(newPos);
+    const newVis = [...visitedCells];
+    const s = new Set(newVis[pid]);
+    s.add(key);
+    newVis[pid] = s;
+    setVisitedCells(newVis);
+
+    // Check goal
+    if (tr === maze.goal[0] && tc === maze.goal[1]) {
+      const newOrder = [...finishOrder, pid];
+      setFinishOrder(newOrder);
+      const place = newOrder.length;
+      const pts = POINTS[place-1] || 0;
+      const newScores = [...scores];
+      newScores[pid] += pts;
+      setScores(newScores);
+      setTurnMessage(`${PLAYERS[pid].name} ukończył labirynt! ${place===1?'🥇':place===2?'🥈':'🥉'} +${pts} pkt`);
+      setTimeout(() => { setTurnMessage(null); nextPlayer(); }, 2000);
+      return;
+    }
+
+    if (isVisited) {
+      // Free move, take another step
+      setTimeout(() => runAiTurn(pid), 500);
+      return;
+    }
+
+    // New cell = question
+    const isChallenge = challenged[pid];
+    const type = isChallenge ? 'hard' : 'medium';
+    const successRate = type === 'hard' ? 0.3 : 0.5;
+    const correct = Math.random() < successRate;
+
+    if (isChallenge) {
+      const newCh = [...challenged];
+      newCh[pid] = false;
+      setChallenged(newCh);
+    }
+
+    setTimeout(() => {
+      if (correct) {
+        const cat = 'correct';
+        setAiComment(prev => ({...prev, [pid]: AI_COMMENTS[cat][Math.floor(Math.random()*AI_COMMENTS[cat].length)]}));
+        const newStreaks = [...streaks];
+        if (!isChallenge) {
+          newStreaks[pid]++;
+        } else {
+          newStreaks[pid] = 0;
+        }
+        setStreaks(newStreaks);
+
+        if (!isChallenge) {
+          // AI picks power
+          setTimeout(() => {
+            const others = [0,1,2].filter(i => i !== pid && !finishOrder.includes(i));
+            const roll = Math.random();
+            if (roll < 0.45 && others.length > 0) {
+              // Freeze
+              const validTargets = others.filter(t => lastFrozenBy[t] !== pid);
+              if (validTargets.length > 0) {
+                const t = validTargets[Math.floor(Math.random()*validTargets.length)];
+                usePowerAI(pid, 'freeze', t);
+              } else {
+                usePowerAI(pid, 'crown', pid);
+              }
+            } else if (roll < 0.8 && others.length > 0) {
+              const t = others[Math.floor(Math.random()*others.length)];
+              usePowerAI(pid, 'challenge', t);
+            } else {
+              usePowerAI(pid, 'crown', pid);
+            }
+          }, 600);
+        } else {
+          setTimeout(() => { setTurnMessage(null); nextPlayer(); }, 1000);
+        }
+      } else {
+        const cat = isChallenge ? 'wrong' : 'wrong';
+        setAiComment(prev => ({...prev, [pid]: AI_COMMENTS.wrong[Math.floor(Math.random()*AI_COMMENTS.wrong.length)]}));
+        const newStreaks = [...streaks];
+        newStreaks[pid] = 0;
+        setStreaks(newStreaks);
+        const newHints2 = [...hints];
+        newHints2[pid] = new Set();
+        setHints(newHints2);
+        setTimeout(() => { setTurnMessage(null); nextPlayer(); }, 1200);
+      }
+    }, 800);
+  }
+
+  function usePowerAI(pid, power, targetId) {
+    setAiComment(prev => ({...prev, [pid]: AI_COMMENTS.powerUsed[Math.floor(Math.random()*AI_COMMENTS.powerUsed.length)]}));
+    if (power === 'freeze') {
+      const newFrozen = [...frozen];
+      newFrozen[targetId] = true;
+      setFrozen(newFrozen);
+      const newLFB = [...lastFrozenBy];
+      newLFB[targetId] = pid;
+      setLastFrozenBy(newLFB);
+      setTurnMessage(`${PLAYERS[pid].name} zamraża ${PLAYERS[targetId].name}! 🧊`);
+      // Target frozen comment
+      if (isAI(targetId)) {
+        setTimeout(() => {
+          setAiComment(prev => ({...prev, [targetId]: AI_COMMENTS.frozen[Math.floor(Math.random()*AI_COMMENTS.frozen.length)]}));
+        }, 400);
+      }
+    } else if (power === 'challenge') {
+      const newCh = [...challenged];
+      newCh[targetId] = true;
+      setChallenged(newCh);
+      setTurnMessage(`${PLAYERS[pid].name} wysyła wyzwanie ${PLAYERS[targetId].name}! ⚡`);
+    } else if (power === 'crown') {
+      const newCrowns = [...crowns];
+      newCrowns[pid]++;
+      setCrowns(newCrowns);
+      const newScores = [...scores];
+      newScores[pid] += 1;
+      setScores(newScores);
+      setTurnMessage(`${PLAYERS[pid].name} zdobywa koronę! 👑 +1 pkt`);
+    }
+    setTimeout(() => { setTurnMessage(null); nextPlayer(); }, 1500);
+  }
+
+  /* ---- Clear AI comments after a while ---- */
+  useEffect(() => {
+    const t = setTimeout(() => setAiComment({0:null,1:null,2:null}), 4000);
+    return () => clearTimeout(t);
+  }, [aiComment]);
+
+  /* ===================== RENDER ===================== */
+
+  /* ---- Menu Screen ---- */
+  if (screen === 'menu') {
+    return (
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',gap:30}}>
+        <h1 style={{fontSize:48,background:'linear-gradient(135deg,#ff4757,#1e90ff,#2ed573)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',marginBottom:10}}>
+          🏰 LABIRYNT QUIZ
+        </h1>
+        <p style={{color:'#888',fontSize:14,maxWidth:500,textAlign:'center'}}>
+          Quiz + Labirynt + Rywalizacja 3 graczy
+        </p>
+        <div style={{display:'flex',gap:20,marginTop:20}}>
+          <button onClick={()=>startGame('multi',null)} style={menuBtnStyle('#ff4757')}>
+            👥 3 GRACZY
+          </button>
+          <button onClick={()=>setScreen('modeSelect')} style={menuBtnStyle('#1e90ff')}>
+            🤖 1 GRACZ
+          </button>
+        </div>
+        <div style={{marginTop:40,color:'#555',fontSize:12}}>
+          {PLAYERS.map(p => (
+            <span key={p.id} style={{color:p.color,marginRight:15}}>{p.emoji} {p.name}</span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  /* ---- Mode Select (solo) ---- */
+  if (screen === 'modeSelect') {
+    return (
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',gap:30}}>
+        <h2 style={{color:'#e0e0e0'}}>Wybierz swoją postać:</h2>
+        <div style={{display:'flex',gap:20}}>
+          {PLAYERS.map(p => (
+            <button key={p.id} onClick={()=>startGame('solo',p.id)}
+              style={{...menuBtnStyle(p.color),width:140,height:140,flexDirection:'column',fontSize:16}}>
+              <span style={{fontSize:40}}>{p.emoji}</span>
+              <span>{p.name}</span>
+            </button>
+          ))}
+        </div>
+        <button onClick={()=>setScreen('menu')} style={{background:'none',border:'1px solid #555',color:'#888',padding:'8px 20px',borderRadius:8,cursor:'pointer',fontFamily:'inherit'}}>
+          ← Powrót
+        </button>
+      </div>
+    );
+  }
+
+  /* ---- Game Over ---- */
+  if (screen === 'gameOver') {
+    const sorted = [0,1,2].sort((a,b) => scores[b] - scores[a]);
+    const medals = ['🥇','🥈','🥉'];
+    return (
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',gap:20}}>
+        <h1 style={{fontSize:36,color:'#ffd700'}}>🏆 KONIEC GRY 🏆</h1>
+        <div style={{display:'flex',flexDirection:'column',gap:15,marginTop:20}}>
+          {sorted.map((pid,idx) => (
+            <div key={pid} style={{display:'flex',alignItems:'center',gap:15,padding:'15px 30px',background:'#1a1a3e',borderRadius:12,border:`2px solid ${PLAYERS[pid].color}`,fontSize:idx===0?24:18}}>
+              <span style={{fontSize:idx===0?40:28}}>{medals[idx]}</span>
+              <span style={{color:PLAYERS[pid].color,fontWeight:700}}>{PLAYERS[pid].name}</span>
+              <span style={{marginLeft:'auto',color:'#ffd700',fontWeight:700}}>{scores[pid]} pkt</span>
+              {crowns[pid] > 0 && <span>{'👑'.repeat(crowns[pid])}</span>}
+            </div>
+          ))}
+        </div>
+        <button onClick={()=>{setScreen('menu');setMazes([null,null,null]);}} style={menuBtnStyle('#1e90ff')}>
+          🔄 Nowa gra
+        </button>
+      </div>
+    );
+  }
+
+  /* ---- Game Screen ---- */
+  if (!mazes[0]) return <div style={{display:'flex',justifyContent:'center',alignItems:'center',height:'100vh'}}>Ładowanie...</div>;
+
+  const otherPlayers = [0,1,2].filter(i => i !== activePlayer);
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',padding:8,gap:8}}>
+      {/* Score Bar */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#1a1a3e',borderRadius:10,padding:'8px 16px',flexShrink:0}}>
+        <div style={{fontSize:13,color:'#888'}}>Poziom {level+1}/{MAZE_SIZES.length} • {MAZE_SIZES[level]}x{MAZE_SIZES[level]}</div>
+        <div style={{display:'flex',gap:20}}>
+          {PLAYERS.map(p => (
+            <div key={p.id} style={{display:'flex',alignItems:'center',gap:6,opacity:finishOrder.includes(p.id)?0.5:1}}>
+              <span style={{color:p.color,fontWeight:700,fontSize:14}}>{p.name}</span>
+              <span style={{color:'#ffd700',fontWeight:700,fontSize:14}}>{scores[p.id]}</span>
+              {streaks[p.id]>=2 && <span style={{fontSize:11}}>🔥{streaks[p.id]}</span>}
+              {frozen[p.id] && <span style={{fontSize:11}}>🧊</span>}
+              {challenged[p.id] && <span style={{fontSize:11}}>⚡</span>}
+              {crowns[p.id]>0 && <span style={{fontSize:11}}>{'👑'.repeat(Math.min(crowns[p.id],3))}</span>}
+              {finishOrder.includes(p.id) && <span style={{fontSize:11}}>{['🥇','🥈','🥉'][finishOrder.indexOf(p.id)]}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Turn Message */}
+      {turnMessage && (
+        <div style={{textAlign:'center',padding:'10px',background:'#2a2a4e',borderRadius:8,fontSize:15,fontWeight:600,animation:'fadeIn .3s ease'}}>
+          {turnMessage}
+        </div>
+      )}
+
+      {/* Main Area */}
+      <div style={{display:'flex',flex:1,gap:8,minHeight:0}}>
+        {/* Main Maze */}
+        <div style={{flex:3,display:'flex',flexDirection:'column',gap:8,minHeight:0}}>
+          <div style={{textAlign:'center',padding:'4px 0'}}>
+            <span style={{color:PLAYERS[activePlayer].color,fontWeight:700,fontSize:18}}>
+              {PLAYERS[activePlayer].emoji} {PLAYERS[activePlayer].name}{isAI(activePlayer)?' (AI)':''}
+              {activePlayer === activePlayer ? ' — Twoja tura' : ''}
+            </span>
+          </div>
+          <div style={{flex:1,display:'flex',justifyContent:'center',alignItems:'center',minHeight:0}}>
+            <MazeView maze={mazes[activePlayer]} position={positions[activePlayer]}
+              visited={visitedCells[activePlayer]} player={PLAYERS[activePlayer]}
+              hints={hints[activePlayer]} onCellClick={handleCellClick}
+              isActive={true} isInteractive={!questionPhase && !powerPhase && !isAiTurn && !finishOrder.includes(activePlayer)}/>
+          </div>
+        </div>
+
+        {/* Side Panel */}
+        <div style={{flex:1,display:'flex',flexDirection:'column',gap:8,minWidth:180,maxWidth:250}}>
+          {otherPlayers.map(pid => (
+            <div key={pid} style={{flex:1,display:'flex',flexDirection:'column',background:'#1a1a3e',borderRadius:10,padding:8,border:`1px solid ${PLAYERS[pid].color}33`,minHeight:0}}>
+              <div style={{textAlign:'center',fontSize:12,color:PLAYERS[pid].color,fontWeight:600,marginBottom:4}}>
+                {PLAYERS[pid].emoji} {PLAYERS[pid].name}{isAI(pid)?' 🤖':''}
+                {finishOrder.includes(pid) && ` ${['🥇','🥈','🥉'][finishOrder.indexOf(pid)]}`}
+              </div>
+              <div style={{flex:1,display:'flex',justifyContent:'center',alignItems:'center',minHeight:0}}>
+                <MazeView maze={mazes[pid]} position={positions[pid]}
+                  visited={visitedCells[pid]} player={PLAYERS[pid]}
+                  hints={new Set()} onCellClick={()=>{}}
+                  isActive={false} isInteractive={false}/>
+              </div>
+              {isAI(pid) && aiComment[pid] && (
+                <div style={{textAlign:'center',fontSize:11,color:PLAYERS[pid].color,marginTop:4,fontStyle:'italic',animation:'fadeIn .3s ease'}}>
+                  {aiComment[pid]}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Question / Power Panel */}
+      {(questionPhase || powerPhase) && (
+        <div className="fade-in" style={{background:'#1a1a3e',borderRadius:12,padding:16,flexShrink:0}}>
+          {questionPhase && currentQuestion && <QuestionPanel
+            question={currentQuestion} phase={questionPhase} timer={questionTimer}
+            selectedAnswer={selectedAnswer} answerResult={answerResult}
+            onSkipReading={()=>{clearInterval(timerRef.current);setQuestionPhase('answering');setQuestionTimer(10);}}
+            onAnswer={handleAnswer} player={PLAYERS[activePlayer]}/>}
+          {powerPhase && <PowerPanel player={PLAYERS[activePlayer]} others={[0,1,2].filter(i=>i!==activePlayer&&!finishOrder.includes(i))}
+            onUsePower={usePower} frozen={frozen} lastFrozenBy={lastFrozenBy} activePlayer={activePlayer}/>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ===================== MAZE VIEW ===================== */
+function MazeView({maze, position, visited, player, hints, onCellClick, isActive, isInteractive}) {
+  if (!maze) return null;
+  const {cells, size, goal} = maze;
+  const containerRef = useRef(null);
+  const [containerSize, setContainerSize] = useState(0);
+
+  useEffect(() => {
+    const measure = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setContainerSize(Math.min(rect.width, rect.height));
+      }
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
+  const cellSize = containerSize > 0 ? Math.floor((containerSize - 4) / size) : (isActive ? 50 : 22);
+  const wallWidth = isActive ? 2 : 1;
+
+  function isVisible(r, c) {
+    const key = `${r},${c}`;
+    if (visited.has(key)) return true;
+    // Check if neighbor of a visited cell through open passage
+    const dirMap = {top:[-1,0],bottom:[1,0],left:[0,-1],right:[0,1]};
+    const oppMap = {top:'bottom',bottom:'top',left:'right',right:'left'};
+    for (const [wall,[dr,dc]] of Object.entries(dirMap)) {
+      const nr = r+dr, nc = c+dc;
+      if (nr>=0&&nr<size&&nc>=0&&nc<size&&visited.has(`${nr},${nc}`)) {
+        if (!cells[nr][nc].walls[oppMap[wall]]) return true;
+      }
+    }
+    return false;
+  }
+
+  const mazePixelSize = cellSize * size + 4;
+
+  return (
+    <div ref={containerRef} style={{width:'100%',height:'100%',display:'flex',justifyContent:'center',alignItems:'center'}}>
+      <div style={{display:'inline-grid',gridTemplateColumns:`repeat(${size},${cellSize}px)`,gap:0,border:`${wallWidth}px solid #3a3a5c`,background:'#0f0f23',borderRadius:4}}>
+        {cells.flat().map(cell => {
+          const {r,c,walls} = cell;
+          const key = `${r},${c}`;
+          const vis = isVisible(r,c);
+          const isPos = position[0]===r && position[1]===c;
+          const isGoal = goal[0]===r && goal[1]===c;
+          const isVisited = visited.has(key);
+          const isHint = hints.has(key);
+          const canClick = isInteractive && vis && !isPos;
+
+          let bg = '#0a0a1a';
+          if (!vis) bg = '#0a0a1a';
+          else if (isVisited) bg = '#1a1a3e';
+          else bg = '#12122e';
+
+          return (
+            <div key={key} onClick={() => canClick && onCellClick(r,c)} style={{
+              width:cellSize,height:cellSize,
+              background:bg,
+              borderTop:`${wallWidth}px solid ${vis && walls.top ? '#3a3a5c' : 'transparent'}`,
+              borderRight:`${wallWidth}px solid ${vis && walls.right ? '#3a3a5c' : 'transparent'}`,
+              borderBottom:`${wallWidth}px solid ${vis && walls.bottom ? '#3a3a5c' : 'transparent'}`,
+              borderLeft:`${wallWidth}px solid ${vis && walls.left ? '#3a3a5c' : 'transparent'}`,
+              display:'flex',justifyContent:'center',alignItems:'center',
+              cursor:canClick?'pointer':'default',
+              position:'relative',
+              transition:'background .2s',
+              boxShadow: isHint ? `inset 0 0 ${isActive?8:3}px #2ed573, 0 0 ${isActive?12:4}px #2ed57388` : 'none',
+              animation: isHint ? 'pulse 1.5s infinite' : 'none',
+            }}>
+              {vis && isGoal && <span style={{fontSize:isActive?cellSize*0.6:cellSize*0.55}}>🏁</span>}
+              {vis && isPos && (
+                <div style={{
+                  width:isActive?cellSize*0.45:cellSize*0.4,
+                  height:isActive?cellSize*0.45:cellSize*0.4,
+                  borderRadius:'50%',
+                  background:'#fff',
+                  boxShadow:`0 0 ${isActive?12:4}px ${player.color}, 0 0 ${isActive?24:8}px ${player.color}88`,
+                  position:'absolute',
+                }}/>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ===================== QUESTION PANEL ===================== */
+function QuestionPanel({question, phase, timer, selectedAnswer, answerResult, onSkipReading, onAnswer, player}) {
+  const isChallenge = question.isChallenge;
+  return (
+    <div>
+      {isChallenge && (
+        <div style={{textAlign:'center',marginBottom:10,color:'#ffd700',fontSize:15,fontWeight:700}}>
+          ⚡ WYZWANIE — pytanie x2 trudniejsze, brak bonusu za odpowiedź!
+        </div>
+      )}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+        <span style={{fontSize:13,color:'#888'}}>{question.type === 'hard' ? '🔴 HARD' : '🟡 MEDIUM'}</span>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:20,fontWeight:700,color:timer<=3?'#ff4757':'#ffd700'}}>{timer}s</span>
+          {phase === 'reading' && (
+            <button onClick={onSkipReading} style={{background:player.color,border:'none',color:'#fff',padding:'6px 14px',borderRadius:6,cursor:'pointer',fontFamily:'inherit',fontSize:13,fontWeight:600}}>
+              Wiem → odpowiadam
+            </button>
+          )}
+        </div>
+      </div>
+      <div style={{fontSize:16,fontWeight:600,marginBottom:14}}>{question.q}</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+        {question.a.map((ans, idx) => {
+          const letter = ['A','B','C','D'][idx];
+          let btnBg = '#2a2a4e';
+          let btnBorder = '#3a3a5c';
+          if (phase === 'result') {
+            if (idx === question.c) { btnBg = '#2ed57333'; btnBorder = '#2ed573'; }
+            else if (idx === selectedAnswer && !answerResult) { btnBg = '#ff475733'; btnBorder = '#ff4757'; }
+          } else if (selectedAnswer === idx) {
+            btnBg = `${player.color}33`; btnBorder = player.color;
+          }
+          const disabled = phase !== 'answering';
+          return (
+            <button key={idx} onClick={() => !disabled && onAnswer(idx)} disabled={disabled} style={{
+              background:btnBg,border:`2px solid ${btnBorder}`,color:'#e0e0e0',padding:'10px 14px',borderRadius:8,
+              cursor:disabled?'default':'pointer',fontFamily:'inherit',fontSize:14,textAlign:'left',
+              opacity: disabled && phase === 'reading' ? 0.5 : 1,transition:'all .2s',
+            }}>
+              <span style={{fontWeight:700,marginRight:8,color:player.color}}>{letter}.</span>{ans}
+            </button>
+          );
+        })}
+      </div>
+      {phase === 'result' && (
+        <div style={{textAlign:'center',marginTop:12,fontSize:18,fontWeight:700,color:answerResult?'#2ed573':'#ff4757'}}>
+          {answerResult ? '✓ Dobrze!' : '✗ Źle!'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ===================== POWER PANEL ===================== */
+function PowerPanel({player, others, onUsePower, frozen, lastFrozenBy, activePlayer}) {
+  const [selectedPower, setSelectedPower] = useState(null);
+
+  const powers = [
+    {id:'freeze',emoji:'🧊',name:'Zamrożenie',desc:'Przeciwnik traci następną turę'},
+    {id:'challenge',emoji:'⚡',name:'Wyzwanie',desc:'Przeciwnik dostaje pytanie HARD'},
+    {id:'crown',emoji:'👑',name:'Korona',desc:'+1 punkt bonusowy'},
+  ];
+
+  function handleSelect(power) {
+    if (power === 'crown') {
+      onUsePower('crown', activePlayer);
+    } else {
+      setSelectedPower(power);
+    }
+  }
+
+  if (selectedPower && others.length > 0) {
+    return (
+      <div>
+        <div style={{textAlign:'center',fontSize:15,fontWeight:600,marginBottom:12}}>
+          {selectedPower === 'freeze' ? '🧊' : '⚡'} Wybierz cel:
+        </div>
+        <div style={{display:'flex',justifyContent:'center',gap:12}}>
+          {others.map(pid => {
+            const cantFreeze = selectedPower === 'freeze' && lastFrozenBy[pid] === activePlayer;
+            return (
+              <button key={pid} disabled={cantFreeze} onClick={() => !cantFreeze && onUsePower(selectedPower, pid)} style={{
+                background: cantFreeze ? '#1a1a3e' : `${PLAYERS[pid].color}22`,
+                border:`2px solid ${cantFreeze ? '#333' : PLAYERS[pid].color}`,
+                color: cantFreeze ? '#555' : PLAYERS[pid].color,
+                padding:'12px 24px',borderRadius:10,cursor:cantFreeze?'not-allowed':'pointer',
+                fontFamily:'inherit',fontSize:15,fontWeight:600,
+              }}>
+                {PLAYERS[pid].emoji} {PLAYERS[pid].name}
+                {cantFreeze && <div style={{fontSize:10,color:'#666'}}>Nie można ponownie</div>}
+              </button>
+            );
+          })}
+          <button onClick={() => setSelectedPower(null)} style={{background:'none',border:'1px solid #555',color:'#888',padding:'12px 16px',borderRadius:10,cursor:'pointer',fontFamily:'inherit',fontSize:13}}>
+            ← Wróć
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{textAlign:'center',fontSize:15,fontWeight:600,marginBottom:12,color:player.color}}>
+        ✓ Poprawna odpowiedź! Wybierz moc:
+      </div>
+      <div style={{display:'flex',justifyContent:'center',gap:12}}>
+        {powers.map(p => {
+          const needsTarget = p.id !== 'crown';
+          const disabled = needsTarget && others.length === 0;
+          return (
+            <button key={p.id} disabled={disabled} onClick={() => !disabled && handleSelect(p.id)} style={{
+              background:'#2a2a4e',border:'2px solid #3a3a5c',color:'#e0e0e0',
+              padding:'12px 20px',borderRadius:10,cursor:disabled?'not-allowed':'pointer',
+              fontFamily:'inherit',fontSize:14,textAlign:'center',opacity:disabled?0.4:1,
+              transition:'all .2s',display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:120,
+            }}>
+              <span style={{fontSize:28}}>{p.emoji}</span>
+              <span style={{fontWeight:600}}>{p.name}</span>
+              <span style={{fontSize:11,color:'#888'}}>{p.desc}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ===================== STYLES ===================== */
+function menuBtnStyle(color) {
+  return {
+    background:`${color}22`,border:`2px solid ${color}`,color:color,
+    padding:'16px 32px',borderRadius:12,cursor:'pointer',
+    fontFamily:'inherit',fontSize:20,fontWeight:700,
+    display:'flex',alignItems:'center',gap:10,transition:'all .2s',
+  };
+}
+
+/* ===================== RENDER ===================== */
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
