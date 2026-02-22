@@ -335,11 +335,13 @@ function App() {
         setQuestionTimer(prev => {
           if (prev <= 1) {
             clearInterval(timerRef.current);
-            if (questionPhase === 'reading') {
-              setQuestionPhase('answering');
-              setQuestionTimer(10);
-            } else {
-              handleAnswer(null);
+            if (!isAiTurn) {
+              if (questionPhase === 'reading') {
+                setQuestionPhase('answering');
+                setQuestionTimer(10);
+              } else {
+                handleAnswer(null);
+              }
             }
             return 0;
           }
@@ -623,8 +625,13 @@ function App() {
     const path = bfsPath(maze, pos, maze.goal);
     const newHints = [...hints];
     const s = new Set(newHints[pid]);
-    for (let i = 1; i <= count && i < path.length; i++) {
-      s.add(`${path[i][0]},${path[i][1]}`);
+    let added = 0;
+    for (let i = 1; i < path.length && added < count; i++) {
+      const key = `${path[i][0]},${path[i][1]}`;
+      if (!visitedCells[pid].has(key)) {
+        s.add(key);
+        added++;
+      }
     }
     newHints[pid] = s;
     setHints(newHints);
@@ -735,11 +742,21 @@ function App() {
       return;
     }
 
-    // New cell = question
+    // New cell = question (AI displays it visually)
     const isChallenge = challenged[pid];
     const type = isChallenge ? 'hard' : 'medium';
+    const q = drawQuestion(type);
     const successRate = type === 'hard' ? 0.3 : 0.5;
     const correct = Math.random() < successRate;
+
+    // Determine AI's answer
+    let aiAnswer;
+    if (correct) {
+      aiAnswer = q.c;
+    } else {
+      const wrongOptions = [0,1,2,3].filter(i => i !== q.c);
+      aiAnswer = wrongOptions[Math.floor(Math.random() * wrongOptions.length)];
+    }
 
     if (isChallenge) {
       const newCh = [...challenged];
@@ -747,54 +764,80 @@ function App() {
       setChallenged(newCh);
     }
 
-    setTimeout(() => {
-      if (correct) {
-        const cat = 'correct';
-        setAiComment(prev => ({...prev, [pid]: AI_COMMENTS[cat][Math.floor(Math.random()*AI_COMMENTS[cat].length)]}));
-        const newStreaks = [...streaks];
-        if (!isChallenge) {
-          newStreaks[pid]++;
-        } else {
-          newStreaks[pid] = 0;
-        }
-        setStreaks(newStreaks);
+    // Step 1: Show question (reading phase)
+    setCurrentQuestion({...q, type, isChallenge});
+    setQuestionPhase('reading');
+    setQuestionTimer(10);
+    setSelectedAnswer(null);
+    setAnswerResult(null);
 
-        if (!isChallenge) {
-          // AI picks power
-          setTimeout(() => {
-            const others = [0,1,2].filter(i => i !== pid && !finishOrder.includes(i));
-            const roll = Math.random();
-            if (roll < 0.45 && others.length > 0) {
-              // Freeze
-              const validTargets = others.filter(t => lastFrozenBy[t] !== pid);
-              if (validTargets.length > 0) {
-                const t = validTargets[Math.floor(Math.random()*validTargets.length)];
-                usePowerAI(pid, 'freeze', t);
-              } else {
-                usePowerAI(pid, 'crown', pid);
-              }
-            } else if (roll < 0.8 && others.length > 0) {
-              const t = others[Math.floor(Math.random()*others.length)];
-              usePowerAI(pid, 'challenge', t);
+    // Step 2: AI finishes reading after ~2s
+    setTimeout(() => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      setQuestionPhase('answering');
+      setQuestionTimer(10);
+
+      // Step 3: AI selects answer after ~1.5s
+      setTimeout(() => {
+        if (timerRef.current) clearInterval(timerRef.current);
+        setSelectedAnswer(aiAnswer);
+        setAnswerResult(correct);
+        setQuestionPhase('result');
+
+        // Step 4: Show result, then continue with streaks/powers
+        setTimeout(() => {
+          setQuestionPhase(null);
+          setCurrentQuestion(null);
+          setSelectedAnswer(null);
+          setAnswerResult(null);
+
+          if (correct) {
+            const cat = 'correct';
+            setAiComment(prev => ({...prev, [pid]: AI_COMMENTS[cat][Math.floor(Math.random()*AI_COMMENTS[cat].length)]}));
+            const newStreaks = [...streaks];
+            if (!isChallenge) {
+              newStreaks[pid]++;
             } else {
-              usePowerAI(pid, 'crown', pid);
+              newStreaks[pid] = 0;
             }
-          }, 600);
-        } else {
-          setTimeout(() => { setTurnMessage(null); nextPlayer(); }, 1000);
-        }
-      } else {
-        const cat = isChallenge ? 'wrong' : 'wrong';
-        setAiComment(prev => ({...prev, [pid]: AI_COMMENTS.wrong[Math.floor(Math.random()*AI_COMMENTS.wrong.length)]}));
-        const newStreaks = [...streaks];
-        newStreaks[pid] = 0;
-        setStreaks(newStreaks);
-        const newHints2 = [...hints];
-        newHints2[pid] = new Set();
-        setHints(newHints2);
-        setTimeout(() => { setTurnMessage(null); nextPlayer(); }, 1200);
-      }
-    }, 800);
+            setStreaks(newStreaks);
+
+            if (!isChallenge) {
+              // AI picks power
+              setTimeout(() => {
+                const others = [0,1,2].filter(i => i !== pid && !finishOrder.includes(i));
+                const roll = Math.random();
+                if (roll < 0.45 && others.length > 0) {
+                  const validTargets = others.filter(t => lastFrozenBy[t] !== pid);
+                  if (validTargets.length > 0) {
+                    const t = validTargets[Math.floor(Math.random()*validTargets.length)];
+                    usePowerAI(pid, 'freeze', t);
+                  } else {
+                    usePowerAI(pid, 'crown', pid);
+                  }
+                } else if (roll < 0.8 && others.length > 0) {
+                  const t = others[Math.floor(Math.random()*others.length)];
+                  usePowerAI(pid, 'challenge', t);
+                } else {
+                  usePowerAI(pid, 'crown', pid);
+                }
+              }, 600);
+            } else {
+              setTimeout(() => { setTurnMessage(null); nextPlayer(); }, 1000);
+            }
+          } else {
+            setAiComment(prev => ({...prev, [pid]: AI_COMMENTS.wrong[Math.floor(Math.random()*AI_COMMENTS.wrong.length)]}));
+            const newStreaks = [...streaks];
+            newStreaks[pid] = 0;
+            setStreaks(newStreaks);
+            const newHints2 = [...hints];
+            newHints2[pid] = new Set();
+            setHints(newHints2);
+            setTimeout(() => { setTurnMessage(null); nextPlayer(); }, 1200);
+          }
+        }, 1500);
+      }, 1500);
+    }, 2000);
   }
 
   function usePowerAI(pid, power, targetId) {
@@ -990,8 +1033,9 @@ function App() {
           {questionPhase && currentQuestion && <QuestionPanel
             question={currentQuestion} phase={questionPhase} timer={questionTimer}
             selectedAnswer={selectedAnswer} answerResult={answerResult}
-            onSkipReading={()=>{clearInterval(timerRef.current);setQuestionPhase('answering');setQuestionTimer(10);}}
-            onAnswer={handleAnswer} player={PLAYERS[activePlayer]}/>}
+            onSkipReading={isAiTurn ? ()=>{} : ()=>{clearInterval(timerRef.current);setQuestionPhase('answering');setQuestionTimer(10);}}
+            onAnswer={isAiTurn ? ()=>{} : handleAnswer} player={PLAYERS[activePlayer]}
+            isAiTurn={isAiTurn}/>}
           {powerPhase && <PowerPanel player={PLAYERS[activePlayer]} others={[0,1,2].filter(i=>i!==activePlayer&&!finishOrder.includes(i))}
             onUsePower={usePower} frozen={frozen} lastFrozenBy={lastFrozenBy} activePlayer={activePlayer}/>}
         </div>
@@ -1092,7 +1136,7 @@ function MazeView({maze, position, visited, player, hints, onCellClick, isActive
 }
 
 /* ===================== QUESTION PANEL ===================== */
-function QuestionPanel({question, phase, timer, selectedAnswer, answerResult, onSkipReading, onAnswer, player}) {
+function QuestionPanel({question, phase, timer, selectedAnswer, answerResult, onSkipReading, onAnswer, player, isAiTurn}) {
   const isChallenge = question.isChallenge;
   return (
     <div>
@@ -1105,7 +1149,7 @@ function QuestionPanel({question, phase, timer, selectedAnswer, answerResult, on
         <span style={{fontSize:13,color:'#888'}}>{question.type === 'hard' ? '🔴 HARD' : '🟡 MEDIUM'}</span>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
           <span style={{fontSize:20,fontWeight:700,color:timer<=3?'#ff4757':'#ffd700'}}>{timer}s</span>
-          {phase === 'reading' && (
+          {phase === 'reading' && !isAiTurn && (
             <button onClick={onSkipReading} style={{background:player.color,border:'none',color:'#fff',padding:'6px 14px',borderRadius:6,cursor:'pointer',fontFamily:'inherit',fontSize:13,fontWeight:600}}>
               Wiem → odpowiadam
             </button>
@@ -1124,7 +1168,7 @@ function QuestionPanel({question, phase, timer, selectedAnswer, answerResult, on
           } else if (selectedAnswer === idx) {
             btnBg = `${player.color}33`; btnBorder = player.color;
           }
-          const disabled = phase !== 'answering';
+          const disabled = phase !== 'answering' || isAiTurn;
           return (
             <button key={idx} onClick={() => !disabled && onAnswer(idx)} disabled={disabled} style={{
               background:btnBg,border:`2px solid ${btnBorder}`,color:'#e0e0e0',padding:'10px 14px',borderRadius:8,
