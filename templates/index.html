@@ -282,7 +282,15 @@ function App() {
       }
       questionPool[type] = fresh;
     }
-    return questionPool[type].splice(Math.floor(Math.random()*questionPool[type].length),1)[0];
+    const q = questionPool[type].splice(Math.floor(Math.random()*questionPool[type].length),1)[0];
+    // Shuffle answers so correct isn't always A
+    const correctAnswer = q.a[q.c];
+    const shuffled = [...q.a];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random()*(i+1));
+      [shuffled[i],shuffled[j]] = [shuffled[j],shuffled[i]];
+    }
+    return {...q, a: shuffled, c: shuffled.indexOf(correctAnswer)};
   }
 
   /* ---- Init Level ---- */
@@ -404,11 +412,8 @@ function App() {
     ls.push(levelPts);
     setLevelScores(ls);
 
-    const newScores = [...scores];
-    levelPts.forEach((pts,i) => newScores[i] += pts);
-    // add crown bonuses
-    crowns.forEach((c,i) => newScores[i] += 0); // crowns already added live
-    setScores(newScores);
+    // Points already added when players reach the goal (movePlayer/movePlayerAfterQuestion)
+    // No need to add them again here — just record levelScores for display
 
     if (level >= 2) {
       setScreen('gameOver');
@@ -437,23 +442,34 @@ function App() {
     const directNeighbors = getAccessibleNeighbors(maze, pr, pc);
     const isDirect = directNeighbors.some(([nr,nc]) => nr===r && nc===c);
 
-    if (!isDirect) {
-      // Check if can path through visited cells
-      if (!visitedCells[pid].has(key)) return;
-      const pathThroughVisited = canReachThroughVisited(maze, pid, [pr,pc], [r,c]);
-      if (!pathThroughVisited) return;
-      // Move through visited (free)
-      movePlayer(pid, r, c, false);
-      return;
-    }
-
     if (visitedCells[pid].has(key)) {
-      // Free move on visited cell
-      movePlayer(pid, r, c, false);
+      // Target is visited — free move (direct neighbor or through visited path)
+      if (isDirect) {
+        movePlayer(pid, r, c, false);
+      } else {
+        const pathThroughVisited = canReachThroughVisited(maze, pid, [pr,pc], [r,c]);
+        if (!pathThroughVisited) return;
+        movePlayer(pid, r, c, false);
+      }
     } else {
-      // New cell - trigger question
-      setPendingMove([r,c]);
-      triggerQuestion(pid);
+      // Target is NEW cell — need a question
+      // Check if reachable: direct neighbor OR adjacent to any visited cell reachable from player
+      if (isDirect) {
+        setPendingMove([r,c]);
+        triggerQuestion(pid);
+      } else {
+        // Find if any visited neighbor of the new cell is reachable through visited path
+        const neighborsOfTarget = getAccessibleNeighbors(maze, r, c);
+        const reachableVisitedNeighbor = neighborsOfTarget.some(([nr,nc]) => {
+          const nk = `${nr},${nc}`;
+          if (!visitedCells[pid].has(nk)) return false;
+          return canReachThroughVisited(maze, pid, [pr,pc], [nr,nc]) ||
+                 (nr === pr && nc === pc);
+        });
+        if (!reachableVisitedNeighbor) return;
+        setPendingMove([r,c]);
+        triggerQuestion(pid);
+      }
     }
   }
 
@@ -938,6 +954,33 @@ function App() {
             </div>
           ))}
         </div>
+        {levelScores.length > 0 && (
+          <div style={{marginTop:10,width:'100%',maxWidth:500}}>
+            <h3 style={{textAlign:'center',color:'#888',fontSize:14,marginBottom:8}}>Punkty za labirynty</h3>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+              <thead>
+                <tr>
+                  <th style={{color:'#888',padding:'4px 8px',borderBottom:'1px solid #333',textAlign:'left'}}>Poziom</th>
+                  {PLAYERS.map(p => (
+                    <th key={p.id} style={{color:p.color,padding:'4px 8px',borderBottom:'1px solid #333',textAlign:'center'}}>{p.name}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {levelScores.map((lp,lvl) => (
+                  <tr key={lvl}>
+                    <td style={{color:'#888',padding:'4px 8px',borderBottom:'1px solid #222'}}>{MAZE_SIZES[lvl]}x{MAZE_SIZES[lvl]}</td>
+                    {PLAYERS.map(p => (
+                      <td key={p.id} style={{color:lp[p.id]>0?'#ffd700':'#555',padding:'4px 8px',borderBottom:'1px solid #222',textAlign:'center',fontWeight:700}}>
+                        {lp[p.id] > 0 ? `+${lp[p.id]}` : '0'}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
         <button onClick={()=>{setScreen('menu');setMazes([null,null,null]);}} style={menuBtnStyle('#1e90ff')}>
           🔄 Nowa gra
         </button>
@@ -984,14 +1027,14 @@ function App() {
           <div style={{textAlign:'center',padding:'4px 0'}}>
             <span style={{color:PLAYERS[activePlayer].color,fontWeight:700,fontSize:18}}>
               {PLAYERS[activePlayer].emoji} {PLAYERS[activePlayer].name}{isAI(activePlayer)?' (AI)':''}
-              {activePlayer === activePlayer ? ' — Twoja tura' : ''}
+              {!isAI(activePlayer) ? ' — Twoja tura' : ''}
             </span>
           </div>
           <div style={{flex:1,display:'flex',justifyContent:'center',alignItems:'center',minHeight:0}}>
             <MazeView maze={mazes[activePlayer]} position={positions[activePlayer]}
               visited={visitedCells[activePlayer]} player={PLAYERS[activePlayer]}
               hints={hints[activePlayer]} onCellClick={handleCellClick}
-              isActive={true} isInteractive={!questionPhase && !powerPhase && !isAiTurn && !finishOrder.includes(activePlayer)}/>
+              isActive={true} isInteractive={!questionPhase && !powerPhase && !isAiTurn && !turnMessage && !finishOrder.includes(activePlayer)}/>
           </div>
         </div>
 
