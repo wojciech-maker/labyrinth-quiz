@@ -9,8 +9,14 @@
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
+@font-face{
+  font-family:'DragonHunter';
+  src:url('https://get.fontspace.co/webfont/9Ynxj/OGU2MzljNDBjZjUwNDg0MWIzNTNhNGI3ZmNlNzg1NTcub3Rm/dragon-hunter.woff') format('woff'),
+      url('https://get.fontspace.co/webfont/9Ynxj/OGU2MzljNDBjZjUwNDg0MWIzNTNhNGI3ZmNlNzg1NTcub3Rm/dragon-hunter.ttf') format('truetype');
+  font-display:swap;
+}
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#0f0f23;color:#e0e0e0;font-family:'Fira Code',monospace;overflow-x:hidden;min-height:100vh}
+body{background:#0a0810;color:#e0e0e0;font-family:'Fira Code',monospace;overflow-x:hidden;min-height:100vh}
 #root{min-height:100vh}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 @keyframes glow{0%,100%{box-shadow:0 0 5px currentColor}50%{box-shadow:0 0 20px currentColor, 0 0 40px currentColor}}
@@ -18,6 +24,8 @@ body{background:#0f0f23;color:#e0e0e0;font-family:'Fira Code',monospace;overflow
 @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
 @keyframes overlayIn{from{opacity:0;transform:scale(0.8)}to{opacity:1;transform:scale(1)}}
+@keyframes portalPulse{0%,100%{box-shadow:0 0 8px #ffd70044,0 0 16px #ffd70022}50%{box-shadow:0 0 16px #ffd70088,0 0 32px #ffd70044}}
+@keyframes torchFlicker{0%,100%{opacity:.85}50%{opacity:1}}
 .fade-in{animation:fadeIn .3s ease}
 </style>
 </head>
@@ -267,11 +275,14 @@ function App() {
   const [pendingMove, setPendingMove] = useState(null);
   const [levelScores, setLevelScores] = useState([]);
   const [overlay, setOverlay] = useState(null);
+  const [crownUsed, setCrownUsed] = useState([false,false,false]);
 
   const timerRef = useRef(null);
   const aiTimeoutRef = useRef(null);
   const frozenRef = useRef(frozen);
   frozenRef.current = frozen;
+  const crownUsedRef = useRef(crownUsed);
+  crownUsedRef.current = crownUsed;
 
   const isAI = useCallback((pid) => gameMode === 'solo' && pid !== soloPlayer, [gameMode, soloPlayer]);
 
@@ -323,6 +334,7 @@ function App() {
     setFrozen([false,false,false]);
     setLastFrozenBy([null,null,null]);
     setChallenged([false,false,false]);
+    setCrownUsed([false,false,false]);
     setHints([new Set(),new Set(),new Set()]);
     setQuestionPhase(null);
     setCurrentQuestion(null);
@@ -419,12 +431,18 @@ function App() {
     finishOrder.forEach((pid,idx) => {
       if (idx < 3) levelPts[pid] = POINTS[idx];
     });
-    // players who didn't finish get 0
+    // Add crown bonuses (+1 per crown used this level)
+    const crownBonus = [0,0,0];
+    [0,1,2].forEach(pid => { if (crownUsed[pid]) crownBonus[pid] = 1; });
+    [0,1,2].forEach(pid => levelPts[pid] += crownBonus[pid]);
+    if (crownBonus.some(b => b > 0)) {
+      setScores(prev => prev.map((s, i) => s + crownBonus[i]));
+    }
     ls.push(levelPts);
     setLevelScores(ls);
 
     // Points already added when players reach the goal (movePlayer/movePlayerAfterQuestion)
-    // No need to add them again here — just record levelScores for display
+    // Crown bonuses added above
 
     if (level >= 2) {
       setScreen('gameOver');
@@ -465,9 +483,10 @@ function App() {
     } else {
       // Target is NEW cell — need a question
       // Check if reachable: direct neighbor OR adjacent to any visited cell reachable from player
+      const isGoalMove = r === maze.goal[0] && c === maze.goal[1];
       if (isDirect) {
         setPendingMove([r,c]);
-        triggerQuestion(pid);
+        if (isGoalMove) { triggerGoalQuestion(pid); } else { triggerQuestion(pid); }
       } else {
         // Find if any visited neighbor of the new cell is reachable through visited path
         const neighborsOfTarget = getAccessibleNeighbors(maze, r, c);
@@ -479,7 +498,7 @@ function App() {
         });
         if (!reachableVisitedNeighbor) return;
         setPendingMove([r,c]);
-        triggerQuestion(pid);
+        if (isGoalMove) { triggerGoalQuestion(pid); } else { triggerQuestion(pid); }
       }
     }
   }
@@ -564,6 +583,21 @@ function App() {
     }
   }
 
+  function triggerGoalQuestion(pid) {
+    const q = drawQuestion('hard');
+    setCurrentQuestion({...q, type: 'hard', isChallenge: false, isGoalQuestion: true});
+    setQuestionPhase('reading');
+    setQuestionTimer(10);
+    setSelectedAnswer(null);
+    setAnswerResult(null);
+    // Clear any pending challenge (goal question is always hard anyway)
+    if (challenged[pid]) {
+      const newCh = [...challenged];
+      newCh[pid] = false;
+      setChallenged(newCh);
+    }
+  }
+
   /* ---- Handle Answer ---- */
   function handleAnswer(ansIdx) {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -573,6 +607,28 @@ function App() {
     setAnswerResult(correct);
     setQuestionPhase('result');
 
+    // === Goal question: special handling ===
+    if (currentQuestion.isGoalQuestion) {
+      if (correct) {
+        // Move to goal and complete labyrinth
+        if (pendingMove) {
+          movePlayerAfterQuestion(pid, pendingMove[0], pendingMove[1]);
+        }
+        setTimeout(() => { nextPlayer(); }, 1500);
+      } else {
+        // Wrong — don't move to goal, stay put, lose streak
+        const newStreaks = [...streaks];
+        newStreaks[pid] = 0;
+        setStreaks(newStreaks);
+        const newHints = [...hints];
+        newHints[pid] = new Set();
+        setHints(newHints);
+        setTimeout(() => { nextPlayer(); }, 1500);
+      }
+      return;
+    }
+
+    // === Normal question handling ===
     if (correct) {
       const newStreaks = [...streaks];
       if (!currentQuestion.isChallenge) {
@@ -703,16 +759,17 @@ function App() {
         '⚡', PLAYERS[pid].color, 2500
       ).then(() => nextPlayer());
     } else if (power === 'crown') {
+      if (crownUsed[pid]) return;
+      const newCU = [...crownUsed];
+      newCU[pid] = true;
+      setCrownUsed(newCU);
       const newCrowns = [...crowns];
       newCrowns[pid]++;
       setCrowns(newCrowns);
-      const newScores = [...scores];
-      newScores[pid] += 1;
-      setScores(newScores);
       setPowerPhase(false);
       showOverlay(
         `${PLAYERS[pid].name} ZDOBYWA KORONĘ!`,
-        '+1 punkt bonusowy',
+        '+1 punkt na koniec poziomu',
         '👑', '#ffd700', 2500
       ).then(() => nextPlayer());
     }
@@ -765,7 +822,8 @@ function App() {
       const key = `${tr},${tc}`;
       const wasVisited = curVisited.has(key);
 
-      // Update local tracking
+      // Update local tracking (save previous for potential revert)
+      const prevPos = [...curPos];
       curPos = [tr,tc];
       curVisited.add(key);
 
@@ -776,21 +834,65 @@ function App() {
       // Pause so movement is visible
       await wait(wasVisited ? 500 : 1000);
 
-      // Check goal
+      // Check goal — must answer a hard final question
       if (tr === maze.goal[0] && tc === maze.goal[1]) {
-        const newOrder = [...finishOrder, pid];
-        setFinishOrder(newOrder);
-        const place = newOrder.length;
-        const pts = POINTS[place-1] || 0;
-        setScores(prev => { const s = [...prev]; s[pid] += pts; return s; });
-        const medal = place===1?'🥇':place===2?'🥈':'🥉';
-        await showOverlay(
-          `${name} UKOŃCZYŁ LABIRYNT!`,
-          `${place}. miejsce — +${pts} pkt`,
-          medal, PLAYERS[pid].color, 3000
-        );
-        nextPlayer();
-        return;
+        const goalQ = drawQuestion('hard');
+        const goalSuccess = Math.random() < 0.3;
+        let goalAnswer;
+        if (goalSuccess) { goalAnswer = goalQ.c; }
+        else { const wo = [0,1,2,3].filter(i => i !== goalQ.c); goalAnswer = wo[Math.floor(Math.random()*wo.length)]; }
+
+        // Show goal question phases
+        setCurrentQuestion({...goalQ, type: 'hard', isChallenge: false, isGoalQuestion: true});
+        setQuestionPhase('reading');
+        setQuestionTimer(10);
+        setSelectedAnswer(null);
+        setAnswerResult(null);
+        await wait(2000);
+
+        if (timerRef.current) clearInterval(timerRef.current);
+        setQuestionPhase('answering');
+        setQuestionTimer(10);
+        await wait(2000);
+
+        if (timerRef.current) clearInterval(timerRef.current);
+        setSelectedAnswer(goalAnswer);
+        setAnswerResult(goalSuccess);
+        setQuestionPhase('result');
+        await wait(2000);
+
+        setQuestionPhase(null);
+        setCurrentQuestion(null);
+        setSelectedAnswer(null);
+        setAnswerResult(null);
+
+        if (goalSuccess) {
+          const newOrder = [...finishOrder, pid];
+          setFinishOrder(newOrder);
+          const place = newOrder.length;
+          const pts = POINTS[place-1] || 0;
+          setScores(prev => { const s = [...prev]; s[pid] += pts; return s; });
+          const medal = place===1?'🥇':place===2?'🥈':'🥉';
+          await showOverlay(
+            `${name} UKOŃCZYŁ LABIRYNT!`,
+            `${place}. miejsce — +${pts} pkt`,
+            medal, PLAYERS[pid].color, 3000
+          );
+          nextPlayer();
+          return;
+        } else {
+          // Failed goal question — revert position, remove goal from visited
+          setAiComment(prev => ({...prev, [pid]: AI_COMMENTS.wrong[Math.floor(Math.random()*AI_COMMENTS.wrong.length)]}));
+          curPos = [...prevPos];
+          curVisited.delete(key);
+          setPositions(prev => { const p = [...prev]; p[pid] = prevPos; return p; });
+          setVisitedCells(prev => { const v = [...prev]; const s = new Set(v[pid]); s.delete(key); v[pid] = s; return [...v]; });
+          setStreaks(prev => { const s = [...prev]; s[pid] = 0; return s; });
+          setHints(prev => { const h = [...prev]; h[pid] = new Set(); return h; });
+          await wait(1500);
+          nextPlayer();
+          return;
+        }
       }
 
       // Visited cell = free move, loop continues
@@ -860,19 +962,29 @@ function App() {
         const roll = Math.random();
         let power, targetId;
 
+        const canCrown = !crownUsedRef.current[pid];
+
         if (roll < 0.45 && others.length > 0) {
           const validTargets = others.filter(t => lastFrozenBy[t] !== pid);
           if (validTargets.length > 0) {
             power = 'freeze';
             targetId = validTargets[Math.floor(Math.random()*validTargets.length)];
-          } else {
+          } else if (canCrown) {
             power = 'crown'; targetId = pid;
+          } else {
+            power = 'challenge';
+            targetId = others[Math.floor(Math.random()*others.length)];
           }
         } else if (roll < 0.8 && others.length > 0) {
           power = 'challenge';
           targetId = others[Math.floor(Math.random()*others.length)];
-        } else {
+        } else if (canCrown) {
           power = 'crown'; targetId = pid;
+        } else if (others.length > 0) {
+          power = 'challenge';
+          targetId = others[Math.floor(Math.random()*others.length)];
+        } else {
+          power = null;
         }
 
         // Apply power with message
@@ -898,17 +1010,17 @@ function App() {
             'Następne pytanie będzie HARD!',
             '⚡', PLAYERS[pid].color, 2500
           );
-        } else {
+        } else if (power === 'crown') {
+          setCrownUsed(prev => { const c = [...prev]; c[pid] = true; return c; });
           setCrowns(prev => { const c = [...prev]; c[pid]++; return c; });
-          setScores(prev => { const s = [...prev]; s[pid] += 1; return s; });
           await showOverlay(
             `${name} ZDOBYWA KORONĘ!`,
-            '+1 punkt bonusowy',
+            '+1 punkt na koniec poziomu',
             '👑', '#ffd700', 2500
           );
         }
 
-        nextPlayer();
+        if (power) nextPlayer(); else { await wait(500); nextPlayer(); }
       } else {
         // Challenge correct — no power, end turn
         await wait(1000);
@@ -936,11 +1048,18 @@ function App() {
   if (screen === 'menu') {
     return (
       <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',gap:30}}>
-        <h1 style={{fontSize:48,background:'linear-gradient(135deg,#ff4757,#1e90ff,#2ed573)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',marginBottom:10}}>
-          🏰 LABIRYNT QUIZ
-        </h1>
-        <p style={{color:'#888',fontSize:14,maxWidth:500,textAlign:'center'}}>
-          Quiz + Labirynt + Rywalizacja 3 graczy
+        <div style={{textAlign:'center'}}>
+          <h1 style={{fontSize:56,fontFamily:'DragonHunter, Fira Code, monospace',
+            background:'linear-gradient(180deg,#ffd700 0%,#ff8c00 40%,#b8860b 100%)',
+            WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',
+            textShadow:'none',letterSpacing:4,marginBottom:8,
+            filter:'drop-shadow(0 0 20px rgba(255,215,0,0.3))'}}>
+            LABIRYNT QUIZ
+          </h1>
+          <div style={{fontSize:28,lineHeight:1}}>🏰⚔️🐉</div>
+        </div>
+        <p style={{color:'#6a5a8a',fontSize:14,maxWidth:500,textAlign:'center',fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:2}}>
+          Quiz + Labirynt + Rywalizacja
         </p>
         <div style={{display:'flex',gap:20,marginTop:20}}>
           <button onClick={()=>startGame('multi',null)} style={menuBtnStyle('#ff4757')}>
@@ -963,7 +1082,7 @@ function App() {
   if (screen === 'modeSelect') {
     return (
       <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',gap:30}}>
-        <h2 style={{color:'#e0e0e0'}}>Wybierz swoją postać:</h2>
+        <h2 style={{color:'#ffd700',fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:2,fontSize:24}}>Wybierz swoją postać:</h2>
         <div style={{display:'flex',gap:20}}>
           {PLAYERS.map(p => (
             <button key={p.id} onClick={()=>startGame('solo',p.id)}
@@ -986,12 +1105,16 @@ function App() {
     const medals = ['🥇','🥈','🥉'];
     return (
       <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',gap:20}}>
-        <h1 style={{fontSize:36,color:'#ffd700'}}>🏆 KONIEC GRY 🏆</h1>
+        <h1 style={{fontSize:36,fontFamily:'DragonHunter, Fira Code, monospace',color:'#ffd700',
+          textShadow:'0 0 20px rgba(255,215,0,0.3)',letterSpacing:3}}>🏆 KONIEC GRY 🏆</h1>
         <div style={{display:'flex',flexDirection:'column',gap:15,marginTop:20}}>
           {sorted.map((pid,idx) => (
-            <div key={pid} style={{display:'flex',alignItems:'center',gap:15,padding:'15px 30px',background:'#1a1a3e',borderRadius:12,border:`2px solid ${PLAYERS[pid].color}`,fontSize:idx===0?24:18}}>
+            <div key={pid} style={{display:'flex',alignItems:'center',gap:15,padding:'15px 30px',
+              background:'linear-gradient(180deg, #1a1530 0%, #0f0a1a 100%)',borderRadius:12,
+              border:`2px solid ${PLAYERS[pid].color}`,fontSize:idx===0?24:18,
+              boxShadow:`0 4px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)`}}>
               <span style={{fontSize:idx===0?40:28}}>{medals[idx]}</span>
-              <span style={{color:PLAYERS[pid].color,fontWeight:700}}>{PLAYERS[pid].name}</span>
+              <span style={{color:PLAYERS[pid].color,fontWeight:700,fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:1}}>{PLAYERS[pid].name}</span>
               <span style={{marginLeft:'auto',color:'#ffd700',fontWeight:700}}>{scores[pid]} pkt</span>
               {crowns[pid] > 0 && <span>{'👑'.repeat(crowns[pid])}</span>}
             </div>
@@ -1039,12 +1162,14 @@ function App() {
   return (
     <div style={{display:'flex',flexDirection:'column',height:'100vh',padding:8,gap:8}}>
       {/* Score Bar */}
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#1a1a3e',borderRadius:10,padding:'8px 16px',flexShrink:0}}>
-        <div style={{fontSize:13,color:'#888'}}>Poziom {level+1}/{MAZE_SIZES.length} • {MAZE_SIZES[level]}x{MAZE_SIZES[level]}</div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+        background:'linear-gradient(180deg, #1a1530 0%, #0f0a1a 100%)',borderRadius:10,padding:'8px 16px',flexShrink:0,
+        border:'1px solid #3a306044',boxShadow:'0 2px 8px rgba(0,0,0,0.3)'}}>
+        <div style={{fontSize:13,color:'#6a5a8a',fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:1}}>Poziom {level+1}/{MAZE_SIZES.length} • {MAZE_SIZES[level]}x{MAZE_SIZES[level]}</div>
         <div style={{display:'flex',gap:20}}>
           {PLAYERS.map(p => (
             <div key={p.id} style={{display:'flex',alignItems:'center',gap:6,opacity:finishOrder.includes(p.id)?0.5:1}}>
-              <span style={{color:p.color,fontWeight:700,fontSize:14}}>{p.name}</span>
+              <span style={{color:p.color,fontWeight:700,fontSize:14,fontFamily:'DragonHunter, Fira Code, monospace'}}>{p.name}</span>
               <span style={{color:'#ffd700',fontWeight:700,fontSize:14}}>{scores[p.id]}</span>
               {streaks[p.id]>=2 && <span style={{fontSize:11}}>🔥{streaks[p.id]}</span>}
               {frozen[p.id] && <span style={{fontSize:11}}>🧊</span>}
@@ -1058,7 +1183,9 @@ function App() {
 
       {/* Turn Message */}
       {turnMessage && (
-        <div style={{textAlign:'center',padding:'10px',background:'#2a2a4e',borderRadius:8,fontSize:15,fontWeight:600,animation:'fadeIn .3s ease'}}>
+        <div style={{textAlign:'center',padding:'10px',background:'linear-gradient(180deg, #1a1530 0%, #0f0a1a 100%)',
+          borderRadius:8,fontSize:15,fontWeight:600,animation:'fadeIn .3s ease',border:'1px solid #3a306044',
+          fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:1,color:'#c0b0d0'}}>
           {turnMessage}
         </div>
       )}
@@ -1068,7 +1195,9 @@ function App() {
         {/* Main Maze */}
         <div style={{flex:3,display:'flex',flexDirection:'column',gap:8,minHeight:0}}>
           <div style={{textAlign:'center',padding:'4px 0'}}>
-            <span style={{color:PLAYERS[activePlayer].color,fontWeight:700,fontSize:18}}>
+            <span style={{color:PLAYERS[activePlayer].color,fontWeight:700,fontSize:20,
+              fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:2,
+              textShadow:`0 0 12px ${PLAYERS[activePlayer].color}44`}}>
               {PLAYERS[activePlayer].emoji} {PLAYERS[activePlayer].name}{isAI(activePlayer)?' (AI)':''}
               {!isAI(activePlayer) ? ' — Twoja tura' : ''}
             </span>
@@ -1084,15 +1213,19 @@ function App() {
         {/* Side Panel */}
         <div style={{flex:1,display:'flex',flexDirection:'column',gap:8,minWidth:180,maxWidth:250}}>
           {otherPlayers.map(pid => (
-            <div key={pid} style={{flex:1,display:'flex',flexDirection:'column',background:'#1a1a3e',borderRadius:10,padding:8,border:`1px solid ${PLAYERS[pid].color}33`,minHeight:0}}>
-              <div style={{textAlign:'center',fontSize:12,color:PLAYERS[pid].color,fontWeight:600,marginBottom:4}}>
+            <div key={pid} style={{flex:1,display:'flex',flexDirection:'column',
+              background:'linear-gradient(180deg, #1a1530 0%, #0f0a1a 100%)',borderRadius:10,padding:8,
+              border:`1px solid ${PLAYERS[pid].color}22`,minHeight:0,
+              boxShadow:'0 2px 8px rgba(0,0,0,0.3)'}}>
+              <div style={{textAlign:'center',fontSize:12,color:PLAYERS[pid].color,fontWeight:600,marginBottom:4,
+                fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:1}}>
                 {PLAYERS[pid].emoji} {PLAYERS[pid].name}{isAI(pid)?' 🤖':''}
                 {finishOrder.includes(pid) && ` ${['🥇','🥈','🥉'][finishOrder.indexOf(pid)]}`}
               </div>
               <div style={{flex:1,display:'flex',justifyContent:'center',alignItems:'center',minHeight:0}}>
                 <MazeView maze={mazes[pid]} position={positions[pid]}
                   visited={visitedCells[pid]} player={PLAYERS[pid]}
-                  hints={new Set()} onCellClick={()=>{}}
+                  hints={hints[pid]} onCellClick={()=>{}}
                   isActive={false} isInteractive={false}/>
               </div>
               {isAI(pid) && aiComment[pid] && (
@@ -1107,7 +1240,10 @@ function App() {
 
       {/* Question / Power Panel */}
       {(questionPhase || powerPhase) && (
-        <div className="fade-in" style={{background:'#1a1a3e',borderRadius:12,padding:16,flexShrink:0}}>
+        <div className="fade-in" style={{background:'linear-gradient(180deg, #1a1530 0%, #0f0a1a 100%)',
+          borderRadius:12,padding:16,flexShrink:0,border:'1px solid #3a306044',
+          boxShadow:'0 -2px 12px rgba(0,0,0,0.3)'}}>
+
           {questionPhase && currentQuestion && <QuestionPanel
             question={currentQuestion} phase={questionPhase} timer={questionTimer}
             selectedAnswer={selectedAnswer} answerResult={answerResult}
@@ -1115,23 +1251,26 @@ function App() {
             onAnswer={isAiTurn ? ()=>{} : handleAnswer} player={PLAYERS[activePlayer]}
             isAiTurn={isAiTurn}/>}
           {powerPhase && <PowerPanel player={PLAYERS[activePlayer]} others={[0,1,2].filter(i=>i!==activePlayer&&!finishOrder.includes(i))}
-            onUsePower={usePower} frozen={frozen} lastFrozenBy={lastFrozenBy} activePlayer={activePlayer}/>}
+            onUsePower={usePower} frozen={frozen} lastFrozenBy={lastFrozenBy} activePlayer={activePlayer} crownUsed={crownUsed}/>}
         </div>
       )}
 
       {/* Overlay */}
       {overlay && (
         <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:1000,
-          background:'rgba(15,15,35,0.92)',display:'flex',flexDirection:'column',
+          background:'radial-gradient(ellipse at center, rgba(15,10,30,0.95) 0%, rgba(5,3,15,0.98) 100%)',
+          display:'flex',flexDirection:'column',
           alignItems:'center',justifyContent:'center',gap:16,
           animation:'overlayIn 0.4s ease'}}>
-          <div style={{fontSize:80,lineHeight:1}}>{overlay.emoji}</div>
-          <div style={{fontSize:32,fontWeight:900,color:overlay.color,textAlign:'center',
-            textTransform:'uppercase',letterSpacing:2,padding:'0 20px'}}>
+          <div style={{fontSize:80,lineHeight:1,filter:`drop-shadow(0 0 20px ${overlay.color}44)`}}>{overlay.emoji}</div>
+          <div style={{fontSize:34,fontWeight:900,color:overlay.color,textAlign:'center',
+            textTransform:'uppercase',letterSpacing:3,padding:'0 20px',
+            fontFamily:'DragonHunter, Fira Code, monospace',
+            textShadow:`0 0 30px ${overlay.color}44, 0 2px 4px rgba(0,0,0,0.5)`}}>
             {overlay.title}
           </div>
           {overlay.subtitle && (
-            <div style={{fontSize:18,color:'#888',textAlign:'center',fontWeight:400}}>
+            <div style={{fontSize:18,color:'#8a7aaa',textAlign:'center',fontWeight:400,letterSpacing:1}}>
               {overlay.subtitle}
             </div>
           )}
@@ -1160,8 +1299,19 @@ function MazeView({maze, position, visited, player, hints, onCellClick, isActive
     return () => window.removeEventListener('resize', measure);
   }, []);
 
-  const cellSize = containerSize > 0 ? Math.floor((containerSize - 4) / size) : (isActive ? 50 : 22);
-  const wallWidth = isActive ? 2 : 1;
+  const cellSize = containerSize > 0 ? Math.floor((containerSize - 6) / size) : (isActive ? 50 : 22);
+  const wallWidth = isActive ? 3 : 1;
+  const wallColor = '#4a4070';
+
+  // Floor texture patterns (deterministic per cell)
+  const floorTextures = [
+    'linear-gradient(135deg, transparent 30%, rgba(255,255,255,0.025) 50%, transparent 70%)',
+    'radial-gradient(circle at 30% 40%, rgba(0,0,0,0.18) 0%, transparent 50%)',
+    'linear-gradient(45deg, rgba(0,0,0,0.12) 25%, transparent 50%, rgba(0,0,0,0.08) 75%)',
+    'radial-gradient(circle at 70% 60%, rgba(255,255,255,0.03) 0%, transparent 45%)',
+    'linear-gradient(180deg, rgba(0,0,0,0.14) 0%, transparent 40%, rgba(0,0,0,0.1) 100%)',
+    'radial-gradient(ellipse at 50% 50%, rgba(120,90,180,0.07) 0%, transparent 55%)',
+  ];
 
   function isVisible(r, c) {
     const key = `${r},${c}`;
@@ -1182,7 +1332,9 @@ function MazeView({maze, position, visited, player, hints, onCellClick, isActive
 
   return (
     <div ref={containerRef} style={{width:'100%',height:'100%',display:'flex',justifyContent:'center',alignItems:'center'}}>
-      <div style={{display:'inline-grid',gridTemplateColumns:`repeat(${size},${cellSize}px)`,gap:0,border:`${wallWidth}px solid #3a3a5c`,background:'#0f0f23',borderRadius:4}}>
+      <div style={{display:'inline-grid',gridTemplateColumns:`repeat(${size},${cellSize}px)`,gap:0,
+        border:`${isActive?3:2}px solid ${wallColor}`,background:'#0a0810',borderRadius:isActive?6:3,
+        boxShadow:isActive?`inset 0 0 12px rgba(0,0,0,0.6), 0 0 20px rgba(0,0,0,0.4)`:'none'}}>
         {cells.flat().map(cell => {
           const {r,c,walls} = cell;
           const key = `${r},${c}`;
@@ -1193,35 +1345,60 @@ function MazeView({maze, position, visited, player, hints, onCellClick, isActive
           const isHint = hints.has(key);
           const canClick = isInteractive && vis && !isPos;
 
-          let bg = '#0a0a1a';
-          if (!vis) bg = '#0a0a1a';
-          else if (isVisited) bg = '#1a1a3e';
-          else bg = '#12122e';
+          // Dungeon floor colors with texture
+          const cellHash = (r * 7 + c * 13 + r * c * 3) % 6;
+          const texture = vis ? floorTextures[cellHash] : 'none';
+          let bg;
+          if (!vis) bg = '#080610';
+          else if (isVisited) bg = '#252035';
+          else bg = 'radial-gradient(circle at center, #1e1830 0%, #12101e 100%)';
+
+          // Wall inset shadows for depth
+          const wallShadows = [];
+          if (vis) {
+            if (walls.top) wallShadows.push(`inset 0 ${isActive?3:1}px ${isActive?6:2}px rgba(0,0,0,0.5)`);
+            if (walls.bottom) wallShadows.push(`inset 0 -${isActive?3:1}px ${isActive?6:2}px rgba(0,0,0,0.5)`);
+            if (walls.left) wallShadows.push(`inset ${isActive?3:1}px 0 ${isActive?6:2}px rgba(0,0,0,0.5)`);
+            if (walls.right) wallShadows.push(`inset -${isActive?3:1}px 0 ${isActive?6:2}px rgba(0,0,0,0.5)`);
+          }
+          // Hint glow
+          if (isHint) {
+            wallShadows.push(`inset 0 0 ${isActive?10:3}px #2ed57344`);
+            wallShadows.push(`0 0 ${isActive?8:3}px #2ed57333`);
+          }
+          // Goal portal glow
+          if (vis && isGoal && !isPos) {
+            wallShadows.push(`inset 0 0 ${isActive?12:4}px #ffd70033`);
+          }
 
           return (
             <div key={key} onClick={() => canClick && onCellClick(r,c)} style={{
               width:cellSize,height:cellSize,
               background:bg,
-              borderTop:`${wallWidth}px solid ${vis && walls.top ? '#3a3a5c' : 'transparent'}`,
-              borderRight:`${wallWidth}px solid ${vis && walls.right ? '#3a3a5c' : 'transparent'}`,
-              borderBottom:`${wallWidth}px solid ${vis && walls.bottom ? '#3a3a5c' : 'transparent'}`,
-              borderLeft:`${wallWidth}px solid ${vis && walls.left ? '#3a3a5c' : 'transparent'}`,
+              backgroundImage:texture,
+              borderTop:`${wallWidth}px solid ${vis && walls.top ? wallColor : 'transparent'}`,
+              borderRight:`${wallWidth}px solid ${vis && walls.right ? wallColor : 'transparent'}`,
+              borderBottom:`${wallWidth}px solid ${vis && walls.bottom ? wallColor : 'transparent'}`,
+              borderLeft:`${wallWidth}px solid ${vis && walls.left ? wallColor : 'transparent'}`,
               display:'flex',justifyContent:'center',alignItems:'center',
               cursor:canClick?'pointer':'default',
               position:'relative',
               transition:'background .2s',
-              boxShadow: isHint ? `inset 0 0 ${isActive?8:3}px #2ed573, 0 0 ${isActive?12:4}px #2ed57388` : 'none',
-              animation: isHint ? 'pulse 1.5s infinite' : 'none',
+              boxShadow: wallShadows.length > 0 ? wallShadows.join(', ') : 'none',
+              animation: isHint ? 'pulse 1.5s infinite' : (vis && isGoal && !isPos ? 'portalPulse 2s infinite' : 'none'),
             }}>
-              {vis && isGoal && <span style={{fontSize:isActive?cellSize*0.6:cellSize*0.55}}>🏁</span>}
+              {vis && isGoal && <span style={{fontSize:isActive?cellSize*0.5:cellSize*0.45,
+                filter:'drop-shadow(0 0 4px #ffd700)',animation:'crownFloat 2s ease-in-out infinite'}}>🏁</span>}
               {vis && isPos && (
                 <div style={{
                   width:isActive?cellSize*0.45:cellSize*0.4,
                   height:isActive?cellSize*0.45:cellSize*0.4,
                   borderRadius:'50%',
-                  background:'#fff',
-                  boxShadow:`0 0 ${isActive?12:4}px ${player.color}, 0 0 ${isActive?24:8}px ${player.color}88`,
+                  background:`radial-gradient(circle, #fff 20%, ${player.color} 60%, ${player.color}88 80%, transparent 100%)`,
+                  boxShadow:`0 0 ${isActive?14:5}px ${player.color}, 0 0 ${isActive?28:10}px ${player.color}66`,
+                  border:`${isActive?2:1}px solid ${player.color}`,
                   position:'absolute',
+                  animation:'torchFlicker 3s ease-in-out infinite',
                 }}/>
               )}
             </div>
@@ -1235,11 +1412,21 @@ function MazeView({maze, position, visited, player, hints, onCellClick, isActive
 /* ===================== QUESTION PANEL ===================== */
 function QuestionPanel({question, phase, timer, selectedAnswer, answerResult, onSkipReading, onAnswer, player, isAiTurn}) {
   const isChallenge = question.isChallenge;
+  const isGoal = question.isGoalQuestion;
   return (
     <div>
-      {isChallenge && (
-        <div style={{textAlign:'center',marginBottom:10,color:'#ffd700',fontSize:15,fontWeight:700}}>
-          ⚡ WYZWANIE — pytanie x2 trudniejsze, brak bonusu za odpowiedź!
+      {isGoal && (
+        <div style={{textAlign:'center',marginBottom:10,color:'#2ed573',fontSize:16,fontWeight:700,
+          fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:2,
+          textShadow:'0 0 12px rgba(46,213,115,0.3)'}}>
+          🏁 PYTANIE FINAŁOWE — odpowiedz poprawnie, by ukończyć labirynt!
+        </div>
+      )}
+      {isChallenge && !isGoal && (
+        <div style={{textAlign:'center',marginBottom:10,color:'#ffd700',fontSize:16,fontWeight:700,
+          fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:2,
+          textShadow:'0 0 12px rgba(255,215,0,0.3)'}}>
+          ⚡ WYZWANIE — pytanie trudniejsze, brak bonusu!
         </div>
       )}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
@@ -1257,8 +1444,8 @@ function QuestionPanel({question, phase, timer, selectedAnswer, answerResult, on
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         {question.a.map((ans, idx) => {
           const letter = ['A','B','C','D'][idx];
-          let btnBg = '#2a2a4e';
-          let btnBorder = '#3a3a5c';
+          let btnBg = '#1a1530';
+          let btnBorder = '#3a3060';
           if (phase === 'result') {
             if (idx === question.c) { btnBg = '#2ed57333'; btnBorder = '#2ed573'; }
             else if (idx === selectedAnswer && !answerResult) { btnBg = '#ff475733'; btnBorder = '#ff4757'; }
@@ -1287,17 +1474,19 @@ function QuestionPanel({question, phase, timer, selectedAnswer, answerResult, on
 }
 
 /* ===================== POWER PANEL ===================== */
-function PowerPanel({player, others, onUsePower, frozen, lastFrozenBy, activePlayer}) {
+function PowerPanel({player, others, onUsePower, frozen, lastFrozenBy, activePlayer, crownUsed}) {
   const [selectedPower, setSelectedPower] = useState(null);
+  const crownAlreadyUsed = crownUsed && crownUsed[activePlayer];
 
   const powers = [
     {id:'freeze',emoji:'🧊',name:'Zamrożenie',desc:'Przeciwnik traci następną turę'},
     {id:'challenge',emoji:'⚡',name:'Wyzwanie',desc:'Przeciwnik dostaje pytanie HARD'},
-    {id:'crown',emoji:'👑',name:'Korona',desc:'+1 punkt bonusowy'},
+    {id:'crown',emoji:'👑',name:'Korona',desc:crownAlreadyUsed ? 'Już użyta w tym poziomie' : '+1 punkt na koniec poziomu'},
   ];
 
   function handleSelect(power) {
     if (power === 'crown') {
+      if (crownAlreadyUsed) return;
       onUsePower('crown', activePlayer);
     } else {
       setSelectedPower(power);
@@ -1307,7 +1496,8 @@ function PowerPanel({player, others, onUsePower, frozen, lastFrozenBy, activePla
   if (selectedPower && others.length > 0) {
     return (
       <div>
-        <div style={{textAlign:'center',fontSize:15,fontWeight:600,marginBottom:12}}>
+        <div style={{textAlign:'center',fontSize:16,fontWeight:600,marginBottom:12,
+          fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:2,color:'#c0b0d0'}}>
           {selectedPower === 'freeze' ? '🧊' : '⚡'} Wybierz cel:
         </div>
         <div style={{display:'flex',justifyContent:'center',gap:12}}>
@@ -1336,23 +1526,26 @@ function PowerPanel({player, others, onUsePower, frozen, lastFrozenBy, activePla
 
   return (
     <div>
-      <div style={{textAlign:'center',fontSize:15,fontWeight:600,marginBottom:12,color:player.color}}>
+      <div style={{textAlign:'center',fontSize:16,fontWeight:600,marginBottom:12,color:player.color,
+        fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:2,
+        textShadow:`0 0 12px ${player.color}33`}}>
         ✓ Poprawna odpowiedź! Wybierz moc:
       </div>
       <div style={{display:'flex',justifyContent:'center',gap:12}}>
         {powers.map(p => {
           const needsTarget = p.id !== 'crown';
-          const disabled = needsTarget && others.length === 0;
+          const disabled = (needsTarget && others.length === 0) || (p.id === 'crown' && crownAlreadyUsed);
           return (
             <button key={p.id} disabled={disabled} onClick={() => !disabled && handleSelect(p.id)} style={{
-              background:'#2a2a4e',border:'2px solid #3a3a5c',color:'#e0e0e0',
+              background:'linear-gradient(180deg, #1a1530 0%, #12101e 100%)',border:'2px solid #3a3060',color:'#e0e0e0',
               padding:'12px 20px',borderRadius:10,cursor:disabled?'not-allowed':'pointer',
               fontFamily:'inherit',fontSize:14,textAlign:'center',opacity:disabled?0.4:1,
               transition:'all .2s',display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:120,
+              boxShadow:'0 2px 8px rgba(0,0,0,0.3)',
             }}>
               <span style={{fontSize:28}}>{p.emoji}</span>
-              <span style={{fontWeight:600}}>{p.name}</span>
-              <span style={{fontSize:11,color:'#888'}}>{p.desc}</span>
+              <span style={{fontWeight:600,fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:1}}>{p.name}</span>
+              <span style={{fontSize:11,color:'#8a7aaa'}}>{p.desc}</span>
             </button>
           );
         })}
@@ -1364,10 +1557,13 @@ function PowerPanel({player, others, onUsePower, frozen, lastFrozenBy, activePla
 /* ===================== STYLES ===================== */
 function menuBtnStyle(color) {
   return {
-    background:`${color}22`,border:`2px solid ${color}`,color:color,
+    background:`linear-gradient(180deg, ${color}22 0%, ${color}11 100%)`,
+    border:`2px solid ${color}`,color:color,
     padding:'16px 32px',borderRadius:12,cursor:'pointer',
-    fontFamily:'inherit',fontSize:20,fontWeight:700,
+    fontFamily:'DragonHunter, Fira Code, monospace',fontSize:20,fontWeight:700,letterSpacing:2,
     display:'flex',alignItems:'center',gap:10,transition:'all .2s',
+    boxShadow:`0 4px 16px ${color}22, inset 0 1px 0 rgba(255,255,255,0.05)`,
+    textShadow:`0 0 12px ${color}44`,
   };
 }
 
