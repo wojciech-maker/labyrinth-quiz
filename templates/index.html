@@ -8,6 +8,8 @@
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <style>
 @font-face{
   font-family:'DragonHunter';
@@ -32,6 +34,19 @@ body{background:#0a0810;color:#e0e0e0;font-family:'Fira Code',monospace;overflow
 <body>
 <div id="root"></div>
 <script type="text/babel">
+/* ===================== FIREBASE SETUP ===================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyChJdM3s1lupIw4-bkfysmYn0BBycijLqQ",
+  authDomain: "labirynth-quiz.firebaseapp.com",
+  databaseURL: "https://labirynth-quiz-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "labirynth-quiz",
+  storageBucket: "labirynth-quiz.firebasestorage.app",
+  messagingSenderId: "669830669973",
+  appId: "1:669830669973:web:e03f78998bb601e31edd9c"
+};
+firebase.initializeApp(firebaseConfig);
+const fbDb = firebase.database();
+
 const {useState,useEffect,useCallback,useRef,useMemo} = React;
 
 /* ===================== QUESTIONS POOL ===================== */
@@ -116,6 +131,53 @@ const AI_COMMENTS = {
   frozen:["AAAA! Zamrożony?! 🥶","To nieczysta zagrywka!","Kiedyś się za to zemszczę!"],
   powerUsed:["Hehehehe... 😈","Smacznego! 💥","A to za ostatni raz!"],
 };
+
+/* ===================== ONLINE HELPERS ===================== */
+function generateRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random()*chars.length)];
+  return code;
+}
+
+function serializeState(s) {
+  const clean = v => v === undefined ? null : v;
+  return {
+    screen: s.screen, gameMode: s.gameMode, level: s.level,
+    mazes: s.mazes, positions: s.positions,
+    visitedCells: s.visitedCells.map(set => [...set]),
+    scores: s.scores, activePlayer: s.activePlayer,
+    finishOrder: s.finishOrder, streaks: s.streaks,
+    frozen: s.frozen, lastFrozenBy: s.lastFrozenBy,
+    challenged: s.challenged, crowns: s.crowns,
+    questionPhase: clean(s.questionPhase),
+    currentQuestion: clean(s.currentQuestion),
+    questionTimer: s.questionTimer,
+    selectedAnswer: clean(s.selectedAnswer),
+    answerResult: clean(s.answerResult),
+    powerPhase: s.powerPhase,
+    hints: s.hints.map(set => [...set]),
+    turnMessage: clean(s.turnMessage),
+    overlay: clean(s.overlay),
+    crownUsed: s.crownUsed,
+    levelScores: s.levelScores,
+    _ts: Date.now(),
+  };
+}
+
+function deserializeState(d) {
+  return {
+    ...d,
+    visitedCells: (d.visitedCells || [[],[],[]]).map(a => new Set(a || [])),
+    hints: (d.hints || [[],[],[]]).map(a => new Set(a || [])),
+    questionPhase: d.questionPhase || null,
+    currentQuestion: d.currentQuestion || null,
+    selectedAnswer: d.selectedAnswer !== undefined ? d.selectedAnswer : null,
+    answerResult: d.answerResult !== undefined ? d.answerResult : null,
+    turnMessage: d.turnMessage || null,
+    overlay: d.overlay || null,
+  };
+}
 
 /* ===================== MAZE GENERATION ===================== */
 function generateMaze(size) {
@@ -277,6 +339,15 @@ function App() {
   const [overlay, setOverlay] = useState(null);
   const [crownUsed, setCrownUsed] = useState([false,false,false]);
 
+  // Online multiplayer state
+  const [roomCode, setRoomCode] = useState(null);
+  const [joinInput, setJoinInput] = useState('');
+  const [onlineError, setOnlineError] = useState(null);
+  const [onlinePlayerCount, setOnlinePlayerCount] = useState(0);
+  const isLocalWrite = useRef(false);
+  const isRemote = useRef(false);
+  const roomRef = useRef(null);
+
   const timerRef = useRef(null);
   const aiTimeoutRef = useRef(null);
   const frozenRef = useRef(frozen);
@@ -285,6 +356,132 @@ function App() {
   crownUsedRef.current = crownUsed;
 
   const isAI = useCallback((pid) => gameMode === 'solo' && pid !== soloPlayer, [gameMode, soloPlayer]);
+  const isOnline = gameMode === 'online';
+
+  /* ---- Firebase Sync ---- */
+  function syncToFirebase(overrides = {}) {
+    if (!roomRef.current) return;
+    isLocalWrite.current = true;
+    const state = {
+      screen, gameMode, level, mazes, positions, visitedCells,
+      scores, activePlayer, finishOrder, streaks, frozen, lastFrozenBy,
+      challenged, crowns, questionPhase, currentQuestion, questionTimer,
+      selectedAnswer, answerResult, powerPhase, hints, turnMessage,
+      overlay, crownUsed, levelScores, ...overrides,
+    };
+    roomRef.current.child('state').set(serializeState(state));
+  }
+
+  function applyRemoteState(d) {
+    isRemote.current = true;
+    const s = deserializeState(d);
+    if (s.screen !== undefined) setScreen(s.screen);
+    if (s.gameMode !== undefined) setGameMode(s.gameMode);
+    if (s.level !== undefined) setLevel(s.level);
+    if (s.mazes !== undefined) setMazes(s.mazes);
+    if (s.positions !== undefined) setPositions(s.positions);
+    if (s.visitedCells !== undefined) setVisitedCells(s.visitedCells);
+    if (s.scores !== undefined) setScores(s.scores);
+    if (s.activePlayer !== undefined) setActivePlayer(s.activePlayer);
+    if (s.finishOrder !== undefined) setFinishOrder(s.finishOrder);
+    if (s.streaks !== undefined) setStreaks(s.streaks);
+    if (s.frozen !== undefined) setFrozen(s.frozen);
+    if (s.lastFrozenBy !== undefined) setLastFrozenBy(s.lastFrozenBy);
+    if (s.challenged !== undefined) setChallenged(s.challenged);
+    if (s.crowns !== undefined) setCrowns(s.crowns);
+    if (s.questionPhase !== undefined) setQuestionPhase(s.questionPhase);
+    if (s.currentQuestion !== undefined) setCurrentQuestion(s.currentQuestion);
+    if (s.questionTimer !== undefined) setQuestionTimer(s.questionTimer);
+    if (s.selectedAnswer !== undefined) setSelectedAnswer(s.selectedAnswer);
+    if (s.answerResult !== undefined) setAnswerResult(s.answerResult);
+    if (s.powerPhase !== undefined) setPowerPhase(s.powerPhase);
+    if (s.hints !== undefined) setHints(s.hints);
+    if (s.turnMessage !== undefined) setTurnMessage(s.turnMessage);
+    if (s.overlay !== undefined) setOverlay(s.overlay);
+    if (s.crownUsed !== undefined) setCrownUsed(s.crownUsed);
+    if (s.levelScores !== undefined) setLevelScores(s.levelScores);
+  }
+
+  // Subscribe to Firebase room
+  useEffect(() => {
+    if (!roomCode) { roomRef.current = null; return; }
+    const ref = fbDb.ref(`rooms/${roomCode}`);
+    roomRef.current = ref;
+
+    // Listen for game state
+    const stateRef = ref.child('state');
+    const stateCb = stateRef.on('value', snap => {
+      if (isLocalWrite.current) { isLocalWrite.current = false; return; }
+      const data = snap.val();
+      if (data) applyRemoteState(data);
+    });
+
+    // Track presence via unique node per client
+    const myId = Math.random().toString(36).slice(2, 10);
+    const presenceRef = ref.child('presence/' + myId);
+    presenceRef.set(true);
+    presenceRef.onDisconnect().remove();
+
+    // Listen for presence count
+    const presRef = ref.child('presence');
+    const presCb = presRef.on('value', snap => {
+      setOnlinePlayerCount(snap.numChildren());
+    });
+
+    return () => {
+      stateRef.off('value', stateCb);
+      presRef.off('value', presCb);
+      presenceRef.remove();
+      presenceRef.onDisconnect().cancel();
+      roomRef.current = null;
+    };
+  }, [roomCode]);
+
+  // Auto-sync: when local state changes in online mode, write to Firebase
+  useEffect(() => {
+    if (!isOnline || !roomRef.current) return;
+    if (isRemote.current) { isRemote.current = false; return; }
+    if (screen !== 'game' && screen !== 'gameOver') return;
+    syncToFirebase();
+  }, [screen, level, mazes, positions, visitedCells, scores, activePlayer,
+      finishOrder, streaks, frozen, lastFrozenBy, challenged, crowns,
+      questionPhase, currentQuestion, selectedAnswer, answerResult,
+      powerPhase, hints, turnMessage, overlay, crownUsed, levelScores]);
+
+  /* ---- Room Management ---- */
+  async function createRoom() {
+    const code = generateRoomCode();
+    const ref = fbDb.ref(`rooms/${code}`);
+    await ref.set({ created: Date.now(), state: null });
+    setRoomCode(code);
+    setOnlineError(null);
+  }
+
+  async function joinRoom(code) {
+    const upper = (code || '').toUpperCase().trim();
+    if (upper.length !== 4) { setOnlineError('Kod musi mieć 4 znaki'); return; }
+    const snap = await fbDb.ref(`rooms/${upper}`).once('value');
+    if (!snap.exists()) { setOnlineError('Pokój nie istnieje'); return; }
+    setRoomCode(upper);
+    setOnlineError(null);
+  }
+
+  function leaveRoom() {
+    setRoomCode(null);
+    setScreen('menu');
+  }
+
+  function startOnlineGame() {
+    setGameMode('online');
+    setSoloPlayer(null);
+    setLevel(0);
+    setScores([0,0,0]);
+    setCrowns([0,0,0]);
+    setLevelScores([]);
+    setQuestionPool({medium:[...QUESTIONS_MEDIUM],hard:[...QUESTIONS_HARD]});
+    setScreen('game');
+    setTimeout(() => initLevel(0), 50);
+  }
 
   function showOverlay(title, subtitle, emoji, color, duration = 2500) {
     setOverlay({ title, subtitle, emoji, color });
@@ -1068,6 +1265,9 @@ function App() {
           <button onClick={()=>setScreen('modeSelect')} style={menuBtnStyle('#1e90ff')}>
             🤖 1 GRACZ
           </button>
+          <button onClick={()=>setScreen('online')} style={menuBtnStyle('#2ed573')}>
+            🌐 ONLINE
+          </button>
         </div>
         <div style={{marginTop:40,color:'#555',fontSize:12}}>
           {PLAYERS.map(p => (
@@ -1095,6 +1295,61 @@ function App() {
         <button onClick={()=>setScreen('menu')} style={{background:'none',border:'1px solid #555',color:'#888',padding:'8px 20px',borderRadius:8,cursor:'pointer',fontFamily:'inherit'}}>
           ← Powrót
         </button>
+      </div>
+    );
+  }
+
+  /* ---- Online Screen ---- */
+  if (screen === 'online') {
+    return (
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',gap:20}}>
+        <h1 style={{fontSize:36,fontFamily:'DragonHunter, Fira Code, monospace',
+          color:'#2ed573',textShadow:'0 0 20px rgba(46,213,115,0.3)',letterSpacing:3}}>
+          🌐 ONLINE
+        </h1>
+        {!roomCode ? (
+          <>
+            <button onClick={createRoom} style={menuBtnStyle('#2ed573')}>
+              ➕ Utwórz pokój
+            </button>
+            <div style={{display:'flex',gap:10,alignItems:'center',marginTop:10}}>
+              <input value={joinInput} onChange={e=>setJoinInput(e.target.value.toUpperCase())}
+                placeholder="KOD" maxLength={4}
+                style={{background:'#1a1530',border:'1px solid #3a3060',color:'#e0e0e0',
+                  padding:'10px 16px',borderRadius:8,fontSize:20,width:120,textAlign:'center',
+                  fontFamily:'Fira Code, monospace',letterSpacing:4,outline:'none'}}/>
+              <button onClick={()=>joinRoom(joinInput)} style={menuBtnStyle('#1e90ff')}>
+                Dołącz
+              </button>
+            </div>
+            {onlineError && <div style={{color:'#ff4757',fontSize:14}}>{onlineError}</div>}
+            <button onClick={()=>setScreen('menu')} style={{background:'none',border:'1px solid #555',color:'#888',padding:'8px 20px',borderRadius:8,cursor:'pointer',fontFamily:'inherit'}}>
+              ← Powrót
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{background:'linear-gradient(180deg, #1a1530 0%, #0f0a1a 100%)',padding:'24px 48px',borderRadius:12,
+              border:'2px solid #2ed573',textAlign:'center',boxShadow:'0 0 20px rgba(46,213,115,0.15)'}}>
+              <div style={{color:'#888',fontSize:12,marginBottom:8}}>Kod pokoju:</div>
+              <div style={{fontSize:48,fontFamily:'Fira Code, monospace',color:'#2ed573',letterSpacing:8,fontWeight:700}}>
+                {roomCode}
+              </div>
+              <div style={{color:'#888',fontSize:14,marginTop:12}}>
+                👥 Graczy: {onlinePlayerCount}
+              </div>
+            </div>
+            <p style={{color:'#6a5a8a',fontSize:13,maxWidth:400,textAlign:'center'}}>
+              Podaj kod znajomym. Każdy gracz może ruszać każdą postacią!
+            </p>
+            <button onClick={startOnlineGame} style={menuBtnStyle('#ffd700')}>
+              🎮 Rozpocznij grę
+            </button>
+            <button onClick={leaveRoom} style={{background:'none',border:'1px solid #555',color:'#888',padding:'8px 20px',borderRadius:8,cursor:'pointer',fontFamily:'inherit'}}>
+              ← Opuść pokój
+            </button>
+          </>
+        )}
       </div>
     );
   }
@@ -1147,9 +1402,20 @@ function App() {
             </table>
           </div>
         )}
-        <button onClick={()=>{setScreen('menu');setMazes([null,null,null]);}} style={menuBtnStyle('#1e90ff')}>
-          🔄 Nowa gra
-        </button>
+        {isOnline ? (
+          <div style={{display:'flex',gap:15}}>
+            <button onClick={startOnlineGame} style={menuBtnStyle('#2ed573')}>
+              🔄 Zagraj ponownie
+            </button>
+            <button onClick={leaveRoom} style={menuBtnStyle('#555')}>
+              🚪 Opuść pokój
+            </button>
+          </div>
+        ) : (
+          <button onClick={()=>{setScreen('menu');setMazes([null,null,null]);}} style={menuBtnStyle('#1e90ff')}>
+            🔄 Nowa gra
+          </button>
+        )}
       </div>
     );
   }
@@ -1165,7 +1431,10 @@ function App() {
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
         background:'linear-gradient(180deg, #1a1530 0%, #0f0a1a 100%)',borderRadius:10,padding:'8px 16px',flexShrink:0,
         border:'1px solid #3a306044',boxShadow:'0 2px 8px rgba(0,0,0,0.3)'}}>
-        <div style={{fontSize:13,color:'#6a5a8a',fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:1}}>Poziom {level+1}/{MAZE_SIZES.length} • {MAZE_SIZES[level]}x{MAZE_SIZES[level]}</div>
+        <div style={{fontSize:13,color:'#6a5a8a',fontFamily:'DragonHunter, Fira Code, monospace',letterSpacing:1}}>
+          Poziom {level+1}/{MAZE_SIZES.length} • {MAZE_SIZES[level]}x{MAZE_SIZES[level]}
+          {isOnline && roomCode && <span style={{color:'#2ed573',marginLeft:12}}>🌐 {roomCode}</span>}
+        </div>
         <div style={{display:'flex',gap:20}}>
           {PLAYERS.map(p => (
             <div key={p.id} style={{display:'flex',alignItems:'center',gap:6,opacity:finishOrder.includes(p.id)?0.5:1}}>
